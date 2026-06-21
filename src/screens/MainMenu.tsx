@@ -36,6 +36,14 @@ export function MainMenu({ availableWorlds, onNavigate, profile }: MainMenuProps
           <div className="floating-card card-two">TP</div>
         </div>
         <div className="hero-copy">
+          <img
+            alt="Memory Explorer"
+            className="asset-game-logo"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+            }}
+            src="/assets/logo/memory-explorer-logo.png"
+          />
           <span className="badge premium-badge">Season 01 Expedition</span>
           <h2>Explorer Pass</h2>
           <p>Complete routes, collect souvenirs, and unlock new destination themes.</p>

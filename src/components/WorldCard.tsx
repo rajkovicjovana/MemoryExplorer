@@ -8,7 +8,21 @@ type WorldCardProps = {
   onSelect: (world: World) => void;
 };
 
+function getWorldAssetId(worldId: string): string {
+  if (worldId === 'tropics') {
+    return 'tropical';
+  }
+
+  if (worldId === 'mountains') {
+    return 'mountain';
+  }
+
+  return worldId;
+}
+
 export function WorldCard({ world, selected, onSelect }: WorldCardProps) {
+  const worldAssetId = getWorldAssetId(world.id);
+
   return (
     <button
       className={`world-card ${selected ? 'selected' : ''} ${world.unlocked ? '' : 'locked'}`}
@@ -23,6 +37,18 @@ export function WorldCard({ world, selected, onSelect }: WorldCardProps) {
     >
       <div className="world-art">
         <div className={`destination-scene scene-${world.id}`} aria-hidden="true">
+          <img
+            alt=""
+            className="asset-world-background"
+            onLoad={(event) => {
+              event.currentTarget.closest('.world-art')?.classList.add('has-world-image');
+              event.currentTarget.closest('.destination-scene')?.classList.add('has-world-image');
+            }}
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+            }}
+            src={`/assets/backgrounds/${worldAssetId}.png`}
+          />
           <span className="scene-sun" />
           <span className="scene-cloud cloud-left" />
           <span className="scene-cloud cloud-right" />

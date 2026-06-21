@@ -11,13 +11,16 @@ import { ModeSelect } from './screens/ModeSelect';
 import { ProfileStats } from './screens/ProfileStats';
 import { Shop } from './screens/Shop';
 import { WorldSelect } from './screens/WorldSelect';
-import type { GameMode, ScreenId, World } from './types/game';
-import type { AchievementProgress, ProgressUpdate, VictoryProgress } from './utils/progression';
+import type { GameMode, PowerUpId, ScreenId, World } from './types/game';
+import type { AchievementProgress, DailyChallengeGameResult, DailyChallengeUpdate, ProgressUpdate, VictoryProgress } from './utils/progression';
 import {
+  applyDailyChallengeProgress,
   applyLossProgress,
   applyVictoryProgress,
+  consumePowerUp,
   getWorldsForLevel,
   loadProfile,
+  purchaseShopItem,
   resetStoredProfile,
   saveProfile,
   unlockGameplayAchievements,
@@ -29,6 +32,7 @@ function App() {
   const unlockedWorlds = useMemo(() => getWorldsForLevel(profile.level), [profile.level]);
   const [selectedWorld, setSelectedWorld] = useState<World>(unlockedWorlds[0]);
   const [selectedMode, setSelectedMode] = useState<GameMode>(gameModes[0]);
+  const [duelPlayers, setDuelPlayers] = useState({ player1: 'Player 1', player2: 'Player 2' });
 
   useEffect(() => {
     saveProfile(profile);
@@ -46,6 +50,25 @@ function App() {
     setProfile((currentProfile) => applyLossProgress(currentProfile));
   }, []);
 
+  const handleDailyChallengeCheck = useCallback((result: DailyChallengeGameResult): DailyChallengeUpdate => {
+    let dailyUpdate: DailyChallengeUpdate | null = null;
+
+    setProfile((currentProfile) => {
+      dailyUpdate = applyDailyChallengeProgress(currentProfile, result);
+
+      return dailyUpdate.profile;
+    });
+
+    return dailyUpdate ?? {
+      dailyChestUnlocked: false,
+      dailyMissionsCompleted: [],
+      profile,
+      rewardCoins: 0,
+      rewardXp: 0,
+      weeklyChallengeCompleted: false,
+    };
+  }, [profile]);
+
   const handleAchievementUnlock = useCallback((achievementIds: string[]): AchievementProgress => {
     const update = unlockGameplayAchievements(profile, achievementIds);
 
@@ -54,6 +77,26 @@ function App() {
     }
 
     return update;
+  }, [profile]);
+
+  const handlePurchaseShopItem = useCallback((itemId: string) => {
+    const result = purchaseShopItem(profile, itemId);
+
+    if (result.profile !== profile) {
+      setProfile(result.profile);
+    }
+
+    return result;
+  }, [profile]);
+
+  const handleUsePowerUp = useCallback((powerUpId: PowerUpId) => {
+    const result = consumePowerUp(profile, powerUpId);
+
+    if (result.profile !== profile) {
+      setProfile(result.profile);
+    }
+
+    return result;
   }, [profile]);
 
   const handleResetProgress = useCallback(() => {
@@ -91,7 +134,9 @@ function App() {
       case 'mode-select':
         return (
           <ModeSelect
+            duelPlayers={duelPlayers}
             onPlay={() => setActiveScreen('gameplay')}
+            onSetDuelPlayers={setDuelPlayers}
             onSelectMode={setSelectedMode}
             selectedMode={selectedMode}
             selectedWorld={selectedWorld}
@@ -101,10 +146,14 @@ function App() {
         return (
           <GameplayPlaceholder
             mode={selectedMode}
+            duelPlayers={duelPlayers}
             onAchievementUnlock={handleAchievementUnlock}
             onLoss={handleLoss}
+            onDailyChallengeCheck={handleDailyChallengeCheck}
             onNavigate={setActiveScreen}
+            onUsePowerUp={handleUsePowerUp}
             onVictory={handleVictory}
+            profile={profile}
             world={selectedWorld}
           />
         );
@@ -113,11 +162,16 @@ function App() {
       case 'achievements':
         return <Achievements profile={profile} />;
       case 'shop':
-        return <Shop />;
+        return (
+          <Shop
+            onPurchaseItem={handlePurchaseShopItem}
+            profile={profile}
+          />
+        );
       case 'leaderboard':
         return <Leaderboard />;
       case 'daily':
-        return <DailyChallenge />;
+        return <DailyChallenge profile={profile} />;
       case 'main-menu':
       default:
         return <MainMenu availableWorlds={unlockedWorlds} onNavigate={setActiveScreen} profile={profile} />;
@@ -125,11 +179,15 @@ function App() {
   }, [
     activeScreen,
     handleAchievementUnlock,
+    handleDailyChallengeCheck,
     handleLoss,
+    handlePurchaseShopItem,
     handleResetProgress,
     handleSelectWorld,
+    handleUsePowerUp,
     handleVictory,
     profile,
+    duelPlayers,
     selectedMode,
     selectedWorld,
     unlockedWorlds,

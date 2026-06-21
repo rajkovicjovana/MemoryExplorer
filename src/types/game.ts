@@ -24,6 +24,9 @@ export type PlayerProfile = {
   bestTime: string;
   bestCombo: number;
   unlockedAchievements: string[];
+  powerUpInventory: Partial<Record<PowerUpId, number>>;
+  dailyMissions: DailyMissionsProgress | null;
+  weeklyChallenge: WeeklyChallengeProgress | null;
 };
 
 export type World = {
@@ -59,12 +62,13 @@ export type Achievement = {
   unlocked: boolean;
 };
 
+export type PowerUpId = 'compass' | 'camera' | 'fast-travel' | 'golden-passport' | 'shuffle' | 'souvenir';
+
 export type ShopItem = {
-  id: string;
+  id: PowerUpId;
   name: string;
-  category: 'Theme' | 'Booster' | 'Card Back' | 'Avatar';
+  description: string;
   price: number;
-  owned: boolean;
   rarity: 'Common' | 'Rare' | 'Epic' | 'Legendary';
 };
 
@@ -76,13 +80,59 @@ export type LeaderboardEntry = {
   country: string;
 };
 
-export type DailyChallenge = {
+export type DailyMissionType =
+  | 'win-any'
+  | 'win-under-90'
+  | 'combo-4'
+  | 'survival-complete'
+  | 'use-2-power-ups'
+  | 'max-3-mismatches'
+  | 'beat-ai-easy-medium';
+
+export type DailyMission = {
+  id: string;
+  dateKey: string;
+  type: DailyMissionType;
   title: string;
   description: string;
-  worldId: string;
-  modeId: string;
-  timeLimit: string;
   rewardCoins: number;
   rewardXp: number;
-  objectives: string[];
+};
+
+export type DailyMissionProgress = {
+  completed: boolean;
+  rewarded: boolean;
+};
+
+export type DailyMissionsProgress = {
+  dateKey: string;
+  missions: Record<string, DailyMissionProgress>;
+  chestRewarded: boolean;
+};
+
+export type WeeklyChallengeType =
+  | 'win-10'
+  | 'beat-hard-ai-3'
+  | 'survival-5'
+  | 'score-3000'
+  | 'use-15-power-ups'
+  | 'combo-6';
+
+export type WeeklyChallenge = {
+  id: string;
+  weekKey: string;
+  type: WeeklyChallengeType;
+  title: string;
+  description: string;
+  target: number;
+  rewardCoins: number;
+  rewardXp: number;
+};
+
+export type WeeklyChallengeProgress = {
+  weekKey: string;
+  challengeId: string;
+  progress: number;
+  completed: boolean;
+  rewarded: boolean;
 };

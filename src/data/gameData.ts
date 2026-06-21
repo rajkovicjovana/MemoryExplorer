@@ -1,10 +1,11 @@
 import type {
   Achievement,
-  DailyChallenge,
+  DailyMission,
   GameMode,
   LeaderboardEntry,
   PlayerProfile,
   ShopItem,
+  WeeklyChallenge,
   World,
 } from '../types/game';
 
@@ -21,6 +22,9 @@ export const playerProfile: PlayerProfile = {
   bestTime: '--:--',
   bestCombo: 0,
   unlockedAchievements: [],
+  powerUpInventory: {},
+  dailyMissions: null,
+  weeklyChallenge: null,
 };
 
 export const worlds: World[] = [
@@ -32,7 +36,7 @@ export const worlds: World[] = [
     unlocked: true,
     progress: 72,
     theme: { primary: '#4f7cff', secondary: '#70d6ff', accent: '#ffd166' },
-    sampleCardSymbols: ['Eiffel', 'Castle', 'Train', 'Canal'],
+    sampleCardSymbols: ['Eiffel', 'Big Ben', 'Colosseum', 'Windmill', 'Castle', 'Train', 'Canal', 'Cathedral'],
   },
   {
     id: 'tropics',
@@ -42,7 +46,7 @@ export const worlds: World[] = [
     unlocked: true,
     progress: 44,
     theme: { primary: '#00b894', secondary: '#2dd4bf', accent: '#ffdd59' },
-    sampleCardSymbols: ['Palm', 'Shell', 'Wave', 'Sun'],
+    sampleCardSymbols: ['Palm', 'Shell', 'Wave', 'Sun', 'Coconut', 'Parrot', 'Hammock', 'Pineapple', 'Coral', 'Tiki'],
   },
   {
     id: 'mountains',
@@ -52,7 +56,26 @@ export const worlds: World[] = [
     unlocked: true,
     progress: 18,
     theme: { primary: '#5f6caf', secondary: '#8ecae6', accent: '#f6c85f' },
-    sampleCardSymbols: ['Peak', 'Cabin', 'Compass', 'Pine'],
+    sampleCardSymbols: [
+      'Peak',
+      'Cabin',
+      'Compass',
+      'Pine',
+      'Glacier',
+      'Eagle',
+      'Campfire',
+      'Backpack',
+      'Waterfall',
+      'Rope Bridge',
+      'Snowboard',
+      'Lake',
+      'Ibex',
+      'Tent',
+      'Map',
+      'Hot Spring',
+      'Summit Flag',
+      'Lantern',
+    ],
   },
   {
     id: 'city',
@@ -62,7 +85,26 @@ export const worlds: World[] = [
     unlocked: false,
     progress: 0,
     theme: { primary: '#ff3d8b', secondary: '#6c5ce7', accent: '#00f5d4' },
-    sampleCardSymbols: ['Metro', 'Tower', 'Taxi', 'Arcade'],
+    sampleCardSymbols: [
+      'Metro',
+      'Tower',
+      'Taxi',
+      'Arcade',
+      'Skyscraper',
+      'Bridge',
+      'Street Food',
+      'Neon Sign',
+      'Bicycle',
+      'Museum',
+      'Fountain',
+      'Clock Tower',
+      'Crosswalk',
+      'Theater',
+      'Market',
+      'Tram',
+      'Rooftop',
+      'Coffee Shop',
+    ],
   },
   {
     id: 'space',
@@ -72,7 +114,26 @@ export const worlds: World[] = [
     unlocked: false,
     progress: 0,
     theme: { primary: '#7b2ff7', secondary: '#14213d', accent: '#fca311' },
-    sampleCardSymbols: ['Planet', 'Rocket', 'Comet', 'Station'],
+    sampleCardSymbols: [
+      'Planet',
+      'Rocket',
+      'Comet',
+      'Station',
+      'Astronaut',
+      'Satellite',
+      'Nebula',
+      'Moon',
+      'Mars Rover',
+      'Black Hole',
+      'Star Gate',
+      'Galaxy',
+      'Telescope',
+      'Alien Signal',
+      'Space Shuttle',
+      'Asteroid',
+      'Solar Panel',
+      'Lunar Base',
+    ],
   },
 ];
 
@@ -118,6 +179,13 @@ export const gameModes: GameMode[] = [
     description: 'Take turns against a rival explorer with adaptive memory.',
     reward: 'Ranked leaderboard points',
     recommendedFor: 'Competitive play',
+  },
+  {
+    id: 'duel',
+    name: '2 Player Duel',
+    description: 'Pass-and-play turns where each player races to claim the most pairs.',
+    reward: 'Local bragging rights',
+    recommendedFor: 'Local multiplayer',
   },
 ];
 
@@ -197,10 +265,48 @@ export const achievements: Achievement[] = [
 ];
 
 export const shopItems: ShopItem[] = [
-  { id: 'aurora-cards', name: 'Aurora Card Back', category: 'Card Back', price: 450, owned: false, rarity: 'Epic' },
-  { id: 'double-xp', name: 'Double XP Ticket', category: 'Booster', price: 250, owned: false, rarity: 'Rare' },
-  { id: 'neon-city', name: 'Neon City Theme', category: 'Theme', price: 900, owned: false, rarity: 'Legendary' },
-  { id: 'pilot-avatar', name: 'Pilot Avatar', category: 'Avatar', price: 320, owned: true, rarity: 'Common' },
+  {
+    id: 'compass',
+    name: 'Compass',
+    description: 'Peek one unmatched pair for 2 seconds.',
+    price: 90,
+    rarity: 'Common',
+  },
+  {
+    id: 'camera',
+    name: 'Camera',
+    description: 'Preview every unmatched card for 3 seconds.',
+    price: 160,
+    rarity: 'Rare',
+  },
+  {
+    id: 'fast-travel',
+    name: 'Fast Travel',
+    description: 'Add time in Time Attack or gain bonus score elsewhere.',
+    price: 130,
+    rarity: 'Rare',
+  },
+  {
+    id: 'golden-passport',
+    name: 'Golden Passport',
+    description: 'Your next selected card auto-finds its matching pair.',
+    price: 240,
+    rarity: 'Epic',
+  },
+  {
+    id: 'shuffle',
+    name: 'Shuffle',
+    description: 'Shuffle hidden unmatched cards.',
+    price: 110,
+    rarity: 'Common',
+  },
+  {
+    id: 'souvenir',
+    name: 'Souvenir Bonus',
+    description: 'Reserve bonus score and coins after victory.',
+    price: 180,
+    rarity: 'Rare',
+  },
 ];
 
 export const leaderboard: LeaderboardEntry[] = [
@@ -211,13 +317,105 @@ export const leaderboard: LeaderboardEntry[] = [
   { rank: 5, player: 'Leo', level: 15, score: 69940, country: 'Brazil' },
 ];
 
-export const dailyChallenge: DailyChallenge = {
-  title: 'Island Sprint',
-  description: 'Clear a tropical board with limited flips and earn a perfect-route bonus.',
-  worldId: 'tropics',
-  modeId: 'time-attack',
-  timeLimit: '02:30',
-  rewardCoins: 180,
-  rewardXp: 320,
-  objectives: ['Finish under 2:30', 'Use fewer than 36 flips', 'Find three pairs in a row'],
-};
+export const dailyMissionTemplates: Omit<DailyMission, 'id' | 'dateKey'>[] = [
+  {
+    type: 'win-any',
+    title: 'Route Finisher',
+    description: 'Win any game.',
+    rewardCoins: 15,
+    rewardXp: 50,
+  },
+  {
+    type: 'win-under-90',
+    title: 'Speed Route',
+    description: 'Win a game in under 90 seconds.',
+    rewardCoins: 25,
+    rewardXp: 80,
+  },
+  {
+    type: 'combo-4',
+    title: 'Combo Trail',
+    description: 'Reach combo 4 in one game.',
+    rewardCoins: 25,
+    rewardXp: 80,
+  },
+  {
+    type: 'survival-complete',
+    title: 'Survival Trek',
+    description: 'Complete Survival Mode.',
+    rewardCoins: 40,
+    rewardXp: 120,
+  },
+  {
+    type: 'use-2-power-ups',
+    title: 'Gear Expert',
+    description: 'Use at least 2 power-ups in one game.',
+    rewardCoins: 25,
+    rewardXp: 80,
+  },
+  {
+    type: 'max-3-mismatches',
+    title: 'Clean Route',
+    description: 'Win with no more than 3 mismatches.',
+    rewardCoins: 25,
+    rewardXp: 80,
+  },
+  {
+    type: 'beat-ai-easy-medium',
+    title: 'Rival Route',
+    description: 'Beat AI on Easy or Medium.',
+    rewardCoins: 40,
+    rewardXp: 120,
+  },
+];
+
+export const weeklyChallengeTemplates: Omit<WeeklyChallenge, 'id' | 'weekKey'>[] = [
+  {
+    type: 'win-10',
+    title: 'Ten Route Week',
+    description: 'Win 10 games this week.',
+    target: 10,
+    rewardCoins: 500,
+    rewardXp: 750,
+  },
+  {
+    type: 'beat-hard-ai-3',
+    title: 'Hard Rival Week',
+    description: 'Beat AI on Hard 3 times.',
+    target: 3,
+    rewardCoins: 500,
+    rewardXp: 750,
+  },
+  {
+    type: 'survival-5',
+    title: 'Survival Specialist',
+    description: 'Complete 5 Survival games.',
+    target: 5,
+    rewardCoins: 500,
+    rewardXp: 750,
+  },
+  {
+    type: 'score-3000',
+    title: 'Score Expedition',
+    description: 'Earn 3000 total score this week.',
+    target: 3000,
+    rewardCoins: 500,
+    rewardXp: 750,
+  },
+  {
+    type: 'use-15-power-ups',
+    title: 'Gear Marathon',
+    description: 'Use 15 power-ups this week.',
+    target: 15,
+    rewardCoins: 500,
+    rewardXp: 750,
+  },
+  {
+    type: 'combo-6',
+    title: 'Peak Combo',
+    description: 'Reach combo 6 in any game.',
+    target: 6,
+    rewardCoins: 500,
+    rewardXp: 750,
+  },
+];
