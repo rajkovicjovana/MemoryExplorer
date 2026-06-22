@@ -2,6 +2,8 @@
 
 Place final AI-generated assets in these folders. The app already references these paths and will fall back to the current CSS visuals when a file is missing.
 
+Recommended mobile-safe sizes: backgrounds around 900x1600 compressed PNG/JPG/WebP, card faces around 512x682 or 768x1024, and icons around 256x256 or 512x512 PNG. Avoid multi-megabyte images for mobile performance.
+
 ## logo
 - `logo/memory-explorer-logo.png` - main game logo.
 

@@ -1,4 +1,4 @@
-import { achievements, dailyMissionTemplates, playerProfile, shopItems, weeklyChallengeTemplates, worlds } from '../data/gameData';
+import { achievements, dailyMissionTemplates, gameModes, playerProfile, shopItems, weeklyChallengeTemplates, worlds } from '../data/gameData';
 import type {
   Achievement,
   DailyMission,
@@ -20,6 +20,8 @@ export type VictoryProgress = {
   bestCombo: number;
   elapsedSeconds: number;
   mismatchCount: number;
+  modeId?: string;
+  worldId?: string;
 };
 
 export type ProgressUpdate = {
@@ -44,6 +46,7 @@ type StoredProfile = Pick<
   | 'bestTime'
   | 'bestCombo'
   | 'unlockedAchievements'
+  | 'worldCompletions'
   | 'powerUpInventory'
   | 'dailyMissions'
   | 'weeklyChallenge'
@@ -86,6 +89,8 @@ const worldUnlockLevels: Record<string, number> = {
 
 const achievementDefinitionsById = new Map(achievements.map((achievement) => [achievement.id, achievement]));
 const shopItemsById = new Map(shopItems.map((item) => [item.id, item]));
+const modeIds = new Set(gameModes.map((mode) => mode.id));
+const worldIds = new Set(worlds.map((world) => world.id));
 
 function hydratePowerUpInventory(storedProfile?: Partial<StoredProfile>): PlayerProfile['powerUpInventory'] {
   const powerUpInventory: PlayerProfile['powerUpInventory'] = {};
@@ -99,6 +104,29 @@ function hydratePowerUpInventory(storedProfile?: Partial<StoredProfile>): Player
   });
 
   return powerUpInventory;
+}
+
+function hydrateWorldCompletions(storedProfile?: Partial<StoredProfile>): PlayerProfile['worldCompletions'] {
+  const worldCompletions: PlayerProfile['worldCompletions'] = {};
+
+  Object.entries(storedProfile?.worldCompletions ?? {}).forEach(([worldId, modes]) => {
+    if (!worldIds.has(worldId) || !modes || typeof modes !== 'object') {
+      return;
+    }
+
+    Object.entries(modes).forEach(([modeId, completed]) => {
+      if (!modeIds.has(modeId) || completed !== true) {
+        return;
+      }
+
+      worldCompletions[worldId] = {
+        ...worldCompletions[worldId],
+        [modeId]: true,
+      };
+    });
+  });
+
+  return worldCompletions;
 }
 
 export function getTodayDateKey(date = new Date()): string {
@@ -313,6 +341,7 @@ function hydrateProfile(storedProfile?: Partial<StoredProfile>): PlayerProfile {
     nextLevelXp: getXpForLevel(level),
     losses: storedProfile?.losses ?? defaultProfile.losses,
     unlockedAchievements: storedProfile?.unlockedAchievements ?? defaultProfile.unlockedAchievements,
+    worldCompletions: hydrateWorldCompletions(storedProfile),
     powerUpInventory: hydratePowerUpInventory(storedProfile),
     dailyMissions: hydrateDailyMissionsProgress(storedProfile),
     weeklyChallenge: hydrateWeeklyChallengeProgress(storedProfile),
@@ -344,6 +373,7 @@ export function saveProfile(profile: PlayerProfile): void {
     bestTime: profile.bestTime,
     bestCombo: profile.bestCombo,
     unlockedAchievements: profile.unlockedAchievements,
+    worldCompletions: profile.worldCompletions,
     powerUpInventory: profile.powerUpInventory,
     dailyMissions: profile.dailyMissions,
     weeklyChallenge: profile.weeklyChallenge,
@@ -418,6 +448,27 @@ export function applyLossProgress(profile: PlayerProfile): PlayerProfile {
     ...profile,
     totalGames: profile.totalGames + 1,
     losses: profile.losses + 1,
+  };
+}
+
+export function markWorldModeCompleted(profile: PlayerProfile, worldId: string, modeId: string): PlayerProfile {
+  if (!worldIds.has(worldId) || !modeIds.has(modeId)) {
+    return profile;
+  }
+
+  if (profile.worldCompletions[worldId]?.[modeId]) {
+    return profile;
+  }
+
+  return {
+    ...profile,
+    worldCompletions: {
+      ...profile.worldCompletions,
+      [worldId]: {
+        ...profile.worldCompletions[worldId],
+        [modeId]: true,
+      },
+    },
   };
 }
 
@@ -535,6 +586,13 @@ export function applyDailyChallengeProgress(profile: PlayerProfile, result: Dail
     nextProfile = awardBonus(nextProfile, rewardXp, rewardCoins);
   }
 
+  if (dailyChestUnlocked || weeklyChallengeCompleted) {
+    nextProfile = unlockAchievements(nextProfile, [
+      ...(dailyChestUnlocked ? ['daily-champion'] : []),
+      ...(weeklyChallengeCompleted ? ['weekly-warrior'] : []),
+    ]).profile;
+  }
+
   if (completedMissions.length === 0 && !dailyChestUnlocked && !weeklyChallengeCompleted) {
     return emptyDailyChallengeUpdate(nextProfile);
   }
@@ -579,7 +637,12 @@ export function applyVictoryProgress(profile: PlayerProfile, victory: VictoryPro
     bestCombo: Math.max(profile.bestCombo, victory.bestCombo),
     bestTime,
   };
-  const achievementUpdate = unlockAchievements(nextProfile, getVictoryAchievementIds(nextProfile, victory));
+  const profileWithWorldCompletion =
+    victory.worldId && victory.modeId ? markWorldModeCompleted(nextProfile, victory.worldId, victory.modeId) : nextProfile;
+  const achievementUpdate = unlockAchievements(
+    profileWithWorldCompletion,
+    getVictoryAchievementIds(profileWithWorldCompletion, victory),
+  );
 
   return {
     leveledUp,
@@ -588,10 +651,14 @@ export function applyVictoryProgress(profile: PlayerProfile, victory: VictoryPro
   };
 }
 
-export function getWorldsForLevel(level: number): World[] {
+export function getWorldsForLevel(level: number, worldCompletions: PlayerProfile['worldCompletions'] = {}): World[] {
   return worlds.map((world) => ({
     ...world,
     unlocked: level >= (worldUnlockLevels[world.id] ?? 1),
+    progress:
+      level >= (worldUnlockLevels[world.id] ?? 1)
+        ? Math.round((gameModes.filter((mode) => worldCompletions[world.id]?.[mode.id]).length / gameModes.length) * 100)
+        : 0,
   }));
 }
 
@@ -645,9 +712,17 @@ export function unlockGameplayAchievements(profile: PlayerProfile, achievementId
 }
 
 function getVictoryAchievementIds(profile: PlayerProfile, victory: VictoryProgress): string[] {
-  const achievementIds = ['first-match', 'memory-rookie'];
+  const achievementIds: string[] = [];
 
-  if (profile.level >= 2) {
+  if (profile.wins >= 10) {
+    achievementIds.push('memory-rookie');
+  }
+
+  if (profile.wins >= 25) {
+    achievementIds.push('first-match');
+  }
+
+  if (profile.level >= 4) {
     achievementIds.push('explorer');
   }
 
@@ -663,12 +738,20 @@ function getVictoryAchievementIds(profile: PlayerProfile, victory: VictoryProgre
     achievementIds.push('perfect-memory');
   }
 
-  if (victory.bestCombo >= 5) {
+  if (victory.bestCombo >= 10) {
     achievementIds.push('combo-master');
   }
 
-  if (profile.coins >= 1000) {
+  if (shopItems.every((item) => (profile.powerUpInventory[item.id] ?? 0) > 0)) {
     achievementIds.push('collector');
+  }
+
+  if (profile.level >= 20) {
+    achievementIds.push('master-explorer');
+  }
+
+  if (profile.unlockedAchievements.length >= 9) {
+    achievementIds.push('badge-hunter');
   }
 
   return achievementIds;
@@ -676,14 +759,26 @@ function getVictoryAchievementIds(profile: PlayerProfile, victory: VictoryProgre
 
 function getAchievementProgressValue(profile: PlayerProfile, achievementId: string): number {
   switch (achievementId) {
+    case 'first-match':
+      return profile.wins;
     case 'memory-rookie':
       return profile.wins;
     case 'explorer':
-      return profile.level >= 2 ? 1 : 0;
+      return profile.level;
     case 'world-traveler':
-      return profile.level >= 10 ? 1 : 0;
+      return Math.min(5, getWorldsForLevel(profile.level).filter((world) => world.unlocked).length);
     case 'collector':
-      return profile.coins;
+      return shopItems.filter((item) => (profile.powerUpInventory[item.id] ?? 0) > 0).length;
+    case 'combo-master':
+      return profile.bestCombo;
+    case 'master-explorer':
+      return profile.level;
+    case 'badge-hunter':
+      return profile.unlockedAchievements.length;
+    case 'daily-champion':
+      return profile.dailyMissions?.chestRewarded ? 3 : Object.values(profile.dailyMissions?.missions ?? {}).filter((mission) => mission.rewarded).length;
+    case 'weekly-warrior':
+      return profile.weeklyChallenge?.rewarded ? 1 : 0;
     default:
       return profile.unlockedAchievements.includes(achievementId) ? 1 : 0;
   }

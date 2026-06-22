@@ -6,7 +6,6 @@ export type ScreenId =
   | 'profile'
   | 'achievements'
   | 'shop'
-  | 'leaderboard'
   | 'daily';
 
 export type Difficulty = 'Easy' | 'Medium' | 'Hard' | 'Expert';
@@ -24,6 +23,7 @@ export type PlayerProfile = {
   bestTime: string;
   bestCombo: number;
   unlockedAchievements: string[];
+  worldCompletions: Record<string, Record<string, boolean>>;
   powerUpInventory: Partial<Record<PowerUpId, number>>;
   dailyMissions: DailyMissionsProgress | null;
   weeklyChallenge: WeeklyChallengeProgress | null;
@@ -70,14 +70,6 @@ export type ShopItem = {
   description: string;
   price: number;
   rarity: 'Common' | 'Rare' | 'Epic' | 'Legendary';
-};
-
-export type LeaderboardEntry = {
-  rank: number;
-  player: string;
-  level: number;
-  score: number;
-  country: string;
 };
 
 export type DailyMissionType =

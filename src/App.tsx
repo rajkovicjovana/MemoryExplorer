@@ -5,7 +5,6 @@ import { gameModes } from './data/gameData';
 import { Achievements } from './screens/Achievements';
 import { DailyChallenge } from './screens/DailyChallenge';
 import { GameplayPlaceholder } from './screens/GameplayPlaceholder';
-import { Leaderboard } from './screens/Leaderboard';
 import { MainMenu } from './screens/MainMenu';
 import { ModeSelect } from './screens/ModeSelect';
 import { ProfileStats } from './screens/ProfileStats';
@@ -20,6 +19,7 @@ import {
   consumePowerUp,
   getWorldsForLevel,
   loadProfile,
+  markWorldModeCompleted,
   purchaseShopItem,
   resetStoredProfile,
   saveProfile,
@@ -29,14 +29,24 @@ import {
 function App() {
   const [profile, setProfile] = useState(loadProfile);
   const [activeScreen, setActiveScreen] = useState<ScreenId>('main-menu');
-  const unlockedWorlds = useMemo(() => getWorldsForLevel(profile.level), [profile.level]);
+  const unlockedWorlds = useMemo(
+    () => getWorldsForLevel(profile.level, profile.worldCompletions),
+    [profile.level, profile.worldCompletions],
+  );
   const [selectedWorld, setSelectedWorld] = useState<World>(unlockedWorlds[0]);
   const [selectedMode, setSelectedMode] = useState<GameMode>(gameModes[0]);
   const [duelPlayers, setDuelPlayers] = useState({ player1: 'Player 1', player2: 'Player 2' });
+  const [activeGameExitHandler, setActiveGameExitHandler] = useState<((screen: ScreenId) => void) | null>(null);
 
   useEffect(() => {
     saveProfile(profile);
   }, [profile]);
+
+  const currentSelectedWorld = useMemo(
+    () => unlockedWorlds.find((world) => world.id === selectedWorld.id) ?? unlockedWorlds[0],
+    [selectedWorld.id, unlockedWorlds],
+  );
+
 
   const handleVictory = useCallback((victory: VictoryProgress): ProgressUpdate => {
     const update = applyVictoryProgress(profile, victory);
@@ -48,6 +58,10 @@ function App() {
 
   const handleLoss = useCallback(() => {
     setProfile((currentProfile) => applyLossProgress(currentProfile));
+  }, []);
+
+  const handleWorldModeComplete = useCallback((worldId: string, modeId: string) => {
+    setProfile((currentProfile) => markWorldModeCompleted(currentProfile, worldId, modeId));
   }, []);
 
   const handleDailyChallengeCheck = useCallback((result: DailyChallengeGameResult): DailyChallengeUpdate => {
@@ -105,7 +119,7 @@ function App() {
     }
 
     const defaultProfile = resetStoredProfile();
-    const defaultWorlds = getWorldsForLevel(defaultProfile.level);
+    const defaultWorlds = getWorldsForLevel(defaultProfile.level, defaultProfile.worldCompletions);
 
     setProfile(defaultProfile);
     setSelectedWorld(defaultWorlds[0]);
@@ -120,6 +134,19 @@ function App() {
     setSelectedWorld(world);
   }, []);
 
+  const handleRegisterExitHandler = useCallback((handler: ((screen: ScreenId) => void) | null) => {
+    setActiveGameExitHandler(() => handler);
+  }, []);
+
+  const handleNavigate = useCallback((screen: ScreenId) => {
+    if (activeScreen === 'gameplay' && activeGameExitHandler && screen !== 'gameplay') {
+      activeGameExitHandler(screen);
+      return;
+    }
+
+    setActiveScreen(screen);
+  }, [activeGameExitHandler, activeScreen]);
+
   const activeContent = useMemo(() => {
     switch (activeScreen) {
       case 'world-select':
@@ -128,7 +155,7 @@ function App() {
             availableWorlds={unlockedWorlds}
             onContinue={() => setActiveScreen('mode-select')}
             onSelectWorld={handleSelectWorld}
-            selectedWorld={selectedWorld}
+            selectedWorld={currentSelectedWorld}
           />
         );
       case 'mode-select':
@@ -139,7 +166,7 @@ function App() {
             onSetDuelPlayers={setDuelPlayers}
             onSelectMode={setSelectedMode}
             selectedMode={selectedMode}
-            selectedWorld={selectedWorld}
+            selectedWorld={currentSelectedWorld}
           />
         );
       case 'gameplay':
@@ -151,14 +178,16 @@ function App() {
             onLoss={handleLoss}
             onDailyChallengeCheck={handleDailyChallengeCheck}
             onNavigate={setActiveScreen}
+            onRegisterExitHandler={handleRegisterExitHandler}
             onUsePowerUp={handleUsePowerUp}
             onVictory={handleVictory}
+            onWorldModeComplete={handleWorldModeComplete}
             profile={profile}
-            world={selectedWorld}
+            world={currentSelectedWorld}
           />
         );
       case 'profile':
-        return <ProfileStats onResetProgress={handleResetProgress} profile={profile} />;
+        return <ProfileStats onNavigate={setActiveScreen} onResetProgress={handleResetProgress} profile={profile} />;
       case 'achievements':
         return <Achievements profile={profile} />;
       case 'shop':
@@ -168,8 +197,6 @@ function App() {
             profile={profile}
           />
         );
-      case 'leaderboard':
-        return <Leaderboard />;
       case 'daily':
         return <DailyChallenge profile={profile} />;
       case 'main-menu':
@@ -182,14 +209,16 @@ function App() {
     handleDailyChallengeCheck,
     handleLoss,
     handlePurchaseShopItem,
+    handleRegisterExitHandler,
     handleResetProgress,
     handleSelectWorld,
+    handleWorldModeComplete,
     handleUsePowerUp,
     handleVictory,
     profile,
+    currentSelectedWorld,
     duelPlayers,
     selectedMode,
-    selectedWorld,
     unlockedWorlds,
   ]);
 
@@ -198,7 +227,7 @@ function App() {
       <div className="phone-frame">
         <TopStatusBar profile={profile} />
         <main className="screen-stack">{activeContent}</main>
-        <BottomNav activeScreen={activeScreen} onNavigate={setActiveScreen} />
+        <BottomNav activeScreen={activeScreen} onNavigate={handleNavigate} />
       </div>
     </div>
   );

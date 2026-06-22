@@ -39,6 +39,8 @@ export function Shop({ profile, onPurchaseItem }: ShopProps) {
                 <img
                   alt=""
                   className="asset-shop-power-up-icon"
+                  decoding="async"
+                  loading="lazy"
                   onLoad={(event) => {
                     const fallbackLabel = event.currentTarget.nextElementSibling;
 

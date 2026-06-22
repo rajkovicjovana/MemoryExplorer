@@ -40,6 +40,8 @@ export function WorldCard({ world, selected, onSelect }: WorldCardProps) {
           <img
             alt=""
             className="asset-world-background"
+            decoding="async"
+            loading="lazy"
             onLoad={(event) => {
               event.currentTarget.closest('.world-art')?.classList.add('has-world-image');
               event.currentTarget.closest('.destination-scene')?.classList.add('has-world-image');

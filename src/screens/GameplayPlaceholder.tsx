@@ -20,6 +20,8 @@ type MemoryCard = {
   matched: boolean;
 };
 
+type BoardImageStatus = 'loading' | 'loaded' | 'failed';
+
 type BoardConfig = {
   columns: number;
   rows: number;
@@ -56,8 +58,10 @@ type GameplayPlaceholderProps = {
   onDailyChallengeCheck: (result: DailyChallengeGameResult) => DailyChallengeUpdate;
   onLoss: () => void;
   onNavigate: (screen: ScreenId) => void;
+  onRegisterExitHandler: (handler: ((screen: ScreenId) => void) | null) => void;
   onUsePowerUp: (powerUpId: PowerUpId) => ShopActionResult;
   onVictory: (victory: VictoryProgress) => ProgressUpdate;
+  onWorldModeComplete: (worldId: string, modeId: string) => void;
 };
 
 type VictoryRewards = {
@@ -68,7 +72,8 @@ type VictoryRewards = {
 
 type AiMemoryEntry = Pick<MemoryCard, 'pairId' | 'symbol' | 'label'>;
 
-const mismatchDelayMs = 760;
+const matchResolveDelayMs = 260;
+const mismatchDelayMs = 780;
 const souvenirScoreBonus = 250;
 const souvenirCoinBonus = 120;
 
@@ -263,15 +268,15 @@ function getModeLabel(mode: GameMode): string {
   return mode.name;
 }
 
-function getGameplaySubtitle(mode: GameMode, world: World, boardConfig: BoardConfig): string {
-  const routeLabel = `${world.name} - ${boardConfig.columns}x${boardConfig.rows} memory route`;
+function getGameplaySubtitle(mode: GameMode, world: World): string {
+  const routeLabel = world.name;
 
   if (mode.id === 'survival') {
-    return `${routeLabel}. Complete the board before you run out of moves.`;
+    return `${routeLabel}. Complete the route before you run out of moves.`;
   }
 
   if (mode.id === 'duel') {
-    return `${routeLabel}. Pass the device and claim more pairs than your rival.`;
+    return `${routeLabel}. Pass the device and outscore your rival.`;
   }
 
   return routeLabel;
@@ -293,8 +298,10 @@ export function GameplayPlaceholder({
   onDailyChallengeCheck,
   onLoss,
   onNavigate,
+  onRegisterExitHandler,
   onUsePowerUp,
   onVictory,
+  onWorldModeComplete,
 }: GameplayPlaceholderProps) {
   const [restartKey, setRestartKey] = useState(0);
 
@@ -307,9 +314,11 @@ export function GameplayPlaceholder({
       onDailyChallengeCheck={onDailyChallengeCheck}
       onLoss={onLoss}
       onNavigate={onNavigate}
+      onRegisterExitHandler={onRegisterExitHandler}
       onRestart={() => setRestartKey((currentKey) => currentKey + 1)}
       onUsePowerUp={onUsePowerUp}
       onVictory={onVictory}
+      onWorldModeComplete={onWorldModeComplete}
       profile={profile}
       world={world}
     />
@@ -329,17 +338,21 @@ function GameplaySession({
   onDailyChallengeCheck,
   onLoss,
   onNavigate,
+  onRegisterExitHandler,
   onRestart,
   onUsePowerUp,
   onVictory,
+  onWorldModeComplete,
 }: GameplaySessionProps) {
   const boardConfig = useMemo(() => getBoardConfig(world), [world]);
   const [cards, setCards] = useState<MemoryCard[]>(() => buildDeck(world, boardConfig));
-  const [flippedIds, setFlippedIds] = useState<string[]>([]);
+  const [cardImageStatus, setCardImageStatus] = useState<Record<string, BoardImageStatus>>({});
+  const [selectedCards, setSelectedCards] = useState<MemoryCard[]>([]);
   const [moves, setMoves] = useState(0);
   const [matches, setMatches] = useState(0);
   const [score, setScore] = useState(0);
   const [combo, setCombo] = useState(0);
+  const [comboBurst, setComboBurst] = useState<number | null>(null);
   const [bestCombo, setBestCombo] = useState(0);
   const [timeLeft, setTimeLeft] = useState(boardConfig.timeLimit);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -355,6 +368,7 @@ function GameplaySession({
   const [powerUpMessage, setPowerUpMessage] = useState('');
   const [activePowerUpInfo, setActivePowerUpInfo] = useState<PowerUpId | null>(null);
   const [showGiveUpConfirm, setShowGiveUpConfirm] = useState(false);
+  const [pendingExitScreen, setPendingExitScreen] = useState<ScreenId | null>(null);
   const [currentTurn, setCurrentTurn] = useState<PlayerTurn>('player');
   const [aiDifficulty, setAiDifficulty] = useState<AiDifficulty>('medium');
   const [aiMemory, setAiMemory] = useState<Record<string, AiMemoryEntry>>({});
@@ -370,6 +384,9 @@ function GameplaySession({
   const [dailyChallengeReward, setDailyChallengeReward] = useState<DailyChallengeUpdate | null>(null);
   const aiTurnInProgressRef = useRef(false);
   const aiTimersRef = useRef<number[]>([]);
+  const gameplayTimersRef = useRef<number[]>([]);
+  const selectedCardsRef = useRef<MemoryCard[]>([]);
+  const isResolvingRef = useRef(false);
   const powerUpPanelRef = useRef<HTMLDivElement | null>(null);
 
   const pairCount = cards.length / 2;
@@ -386,6 +403,99 @@ function GameplaySession({
   const duelPlayer1Name = duelPlayers.player1.trim() || 'Player 1';
   const duelPlayer2Name = duelPlayers.player2.trim() || 'Player 2';
   const currentDuelPlayerName = duelTurn === 'player1' ? duelPlayer1Name : duelPlayer2Name;
+
+  const cardFaceUrls = useMemo(
+    () => {
+      const boardPairCount = (boardConfig.columns * boardConfig.rows) / 2;
+      const boardSymbols = Array.from(
+        { length: boardPairCount },
+        (_, index) => world.sampleCardSymbols[index % world.sampleCardSymbols.length],
+      );
+
+      return Array.from(new Set(boardSymbols.map((symbol) => getCardFaceAssetPath(world, symbol))));
+    },
+    [boardConfig.columns, boardConfig.rows, world],
+  );
+  const cardFaceUrlKey = cardFaceUrls.join('|');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const preloadTimerId = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+
+      if (cardFaceUrls.length === 0) {
+        setCardImageStatus({});
+        return;
+      }
+
+      setCardImageStatus(Object.fromEntries(cardFaceUrls.map((url) => [url, 'loading' as BoardImageStatus])));
+
+      cardFaceUrls.forEach((url) => {
+        const image = new Image();
+
+        const markSettled = (status: BoardImageStatus) => {
+          if (cancelled) {
+            return;
+          }
+
+          setCardImageStatus((currentStatus) => ({
+            ...currentStatus,
+            [url]: status,
+          }));
+        };
+
+        image.onload = () => markSettled('loaded');
+        image.onerror = () => markSettled('failed');
+        image.src = url;
+      });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(preloadTimerId);
+    };
+  }, [cardFaceUrlKey, cardFaceUrls]);
+
+  useEffect(() => {
+    selectedCardsRef.current = selectedCards;
+  }, [selectedCards]);
+
+  useEffect(() => {
+    isResolvingRef.current = isResolving;
+  }, [isResolving]);
+
+  const scheduleGameplayTimer = useCallback((callback: () => void, delayMs: number) => {
+    const timerId = window.setTimeout(() => {
+      gameplayTimersRef.current = gameplayTimersRef.current.filter((currentTimerId) => currentTimerId !== timerId);
+      callback();
+    }, delayMs);
+
+    gameplayTimersRef.current.push(timerId);
+  }, []);
+
+  const scheduleAfterNextPaint = useCallback((callback: () => void, delayMs: number) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        scheduleGameplayTimer(callback, delayMs);
+      });
+    });
+  }, [scheduleGameplayTimer]);
+
+  const isCardVisible = useCallback((card: MemoryCard) => (
+    card.matched || selectedCards.some((selectedCard) => selectedCard.id === card.id) || temporaryRevealedIds.includes(card.id)
+  ), [selectedCards, temporaryRevealedIds]);
+
+  const showComboBurst = useCallback((nextCombo: number) => {
+    if (nextCombo < 2) {
+      return;
+    }
+
+    setComboBurst(nextCombo);
+    scheduleGameplayTimer(() => setComboBurst(null), 1000);
+  }, [scheduleGameplayTimer]);
 
   useEffect(() => {
     if (!activePowerUpInfo) {
@@ -444,6 +554,9 @@ function GameplaySession({
 
       return [...currentAchievements, ...uniqueNextAchievements];
     });
+    window.setTimeout(() => {
+      setNewlyUnlockedAchievements([]);
+    }, 3200);
   }, []);
 
   const showPowerUpMessage = (message: string) => {
@@ -522,8 +635,9 @@ function GameplaySession({
       nextPlayer1Pairs > nextPlayer2Pairs ? 'player1' : nextPlayer2Pairs > nextPlayer1Pairs ? 'player2' : 'draw';
 
     setDuelOutcome(outcome);
+    onWorldModeComplete(world.id, mode.id);
     setStatus('won');
-  }, []);
+  }, [mode.id, onWorldModeComplete, world.id]);
 
   const finishAiGame = useCallback((
     nextPlayerPairs: number,
@@ -556,6 +670,8 @@ function GameplaySession({
       bestCombo: finalBestCombo,
       elapsedSeconds,
       mismatchCount: finalMismatchCount,
+      modeId: mode.id,
+      worldId: world.id,
     });
 
     setScore(finalVictoryScore);
@@ -568,7 +684,7 @@ function GameplaySession({
       score: finalVictoryScore,
     });
     setStatus('won');
-  }, [completeGame, elapsedSeconds, hasSouvenirBonus, onLoss, onVictory, showAchievementUnlocks]);
+  }, [completeGame, elapsedSeconds, hasSouvenirBonus, mode.id, onLoss, onVictory, showAchievementUnlocks, world.id]);
 
   const finishSoloVictory = useCallback((finalScore: number, finalBestCombo: number, finalMismatchCount: number) => {
     const finalVictoryScore = finalScore + (hasSouvenirBonus ? souvenirScoreBonus : 0);
@@ -578,6 +694,8 @@ function GameplaySession({
       bestCombo: finalBestCombo,
       elapsedSeconds,
       mismatchCount: finalMismatchCount,
+      modeId: mode.id,
+      worldId: world.id,
     });
 
     setScore(finalVictoryScore);
@@ -589,13 +707,15 @@ function GameplaySession({
       score: finalVictoryScore,
     });
     setStatus('won');
-  }, [completeGame, elapsedSeconds, hasSouvenirBonus, onVictory, showAchievementUnlocks]);
+  }, [completeGame, elapsedSeconds, hasSouvenirBonus, mode.id, onVictory, showAchievementUnlocks, world.id]);
 
   const revealTemporarily = (cardIds: string[], durationMs: number) => {
     setTemporaryRevealedIds(cardIds);
+    isResolvingRef.current = true;
     setIsResolving(true);
-    window.setTimeout(() => {
+    scheduleGameplayTimer(() => {
       setTemporaryRevealedIds([]);
+      isResolvingRef.current = false;
       setIsResolving(false);
     }, durationMs);
   };
@@ -613,7 +733,7 @@ function GameplaySession({
       !isPlayerTurn ||
       isResolving ||
       goldenPassportActive ||
-      flippedIds.length > 0 ||
+      selectedCards.length > 0 ||
       (powerUp.id === 'souvenir' && souvenirBonusActive)
     ) {
       return;
@@ -673,14 +793,17 @@ function GameplaySession({
       }
 
       setGoldenPassportActive(true);
-      setFlippedIds([]);
+      setSelectedCards([]);
       showPowerUpMessage('Golden Passport is ready. Pick any hidden card.');
       return;
     }
 
     if (powerUp.id === 'shuffle') {
       const eligibleCards = cards.filter(
-        (card) => !card.matched && !flippedIds.includes(card.id) && !temporaryRevealedIds.includes(card.id),
+        (card) =>
+          !card.matched &&
+          !selectedCards.some((selectedCard) => selectedCard.id === card.id) &&
+          !temporaryRevealedIds.includes(card.id),
       );
 
       if (eligibleCards.length < 2) {
@@ -695,7 +818,12 @@ function GameplaySession({
         const eligibleIndexes: number[] = [];
 
         currentCards.forEach((card, index) => {
-          if (!card || card.matched || flippedIds.includes(card.id) || temporaryRevealedIds.includes(card.id)) {
+          if (
+            !card ||
+            card.matched ||
+            selectedCards.some((selectedCard) => selectedCard.id === card.id) ||
+            temporaryRevealedIds.includes(card.id)
+          ) {
             return;
           }
 
@@ -766,14 +894,17 @@ function GameplaySession({
   }, [completeGame, isTimeAttack, status]);
 
   const handleCardClick = (card: MemoryCard) => {
+    if (card.matched) {
+      return;
+    }
+
     if (
       status !== 'playing' ||
-      isResolving ||
+      isResolvingRef.current ||
       aiThinking ||
       !isPlayerTurn ||
-      card.matched ||
-      flippedIds.includes(card.id) ||
-      flippedIds.length >= 2
+      selectedCardsRef.current.some((selectedCard) => selectedCard.id === card.id) ||
+      selectedCardsRef.current.length >= 2
     ) {
       return;
     }
@@ -800,11 +931,13 @@ function GameplaySession({
       const nextDuelPlayer2Pairs = isDuelMode && duelTurn === 'player2' ? duelPlayer2Pairs + 1 : duelPlayer2Pairs;
 
       setGoldenPassportActive(false);
-      setFlippedIds([card.id, matchingCard.id]);
+      selectedCardsRef.current = [card, matchingCard];
+      setSelectedCards([card, matchingCard]);
       setMoves(nextMoveCount);
+      isResolvingRef.current = true;
       setIsResolving(true);
 
-      window.setTimeout(() => {
+      scheduleAfterNextPaint(() => {
         setCards((currentCards) =>
           currentCards.map((item) => (item.pairId === card.pairId ? { ...item, matched: true } : item)),
         );
@@ -814,17 +947,20 @@ function GameplaySession({
         setDuelPlayer2Pairs(nextDuelPlayer2Pairs);
         setScore(finalScore);
         setCombo(nextCombo);
+        showComboBurst(nextCombo);
         setBestCombo(finalBestCombo);
-        setFlippedIds([]);
+        selectedCardsRef.current = [];
+        setSelectedCards([]);
+        isResolvingRef.current = false;
         setIsResolving(false);
         showPowerUpMessage('Golden Passport completed a pair.');
         if (isDuelMode) {
           setDuelMessage(`${currentDuelPlayerName} found a pair and goes again.`);
         }
 
-        const gameplayAchievementIds = ['first-match'];
+        const gameplayAchievementIds: string[] = [];
 
-        if (nextCombo >= 5) {
+        if (nextCombo >= 10) {
           gameplayAchievementIds.push('combo-master');
         }
 
@@ -847,26 +983,33 @@ function GameplaySession({
           });
           setStatus('lost');
         }
-      }, 360);
+      }, matchResolveDelayMs);
 
       return;
     }
 
-    const nextFlippedIds = [...flippedIds, card.id];
-    setFlippedIds(nextFlippedIds);
-
-    if (nextFlippedIds.length !== 2) {
+    if (selectedCardsRef.current.length === 0) {
+      selectedCardsRef.current = [card];
+      setSelectedCards([card]);
       return;
     }
+
+    const [firstSelectedCard] = selectedCardsRef.current;
+    const nextSelectedCards = [firstSelectedCard, card].filter((selectedCard): selectedCard is MemoryCard => Boolean(selectedCard));
+    selectedCardsRef.current = nextSelectedCards;
+    setSelectedCards(nextSelectedCards);
 
     const nextMoveCount = moves + 1;
     setMoves(nextMoveCount);
+    isResolvingRef.current = true;
     setIsResolving(true);
 
-    const [firstCard, secondCard] = nextFlippedIds.map((cardId) => cards.find((item) => item.id === cardId));
+    const [firstCard, secondCard] = nextSelectedCards;
 
     if (!firstCard || !secondCard) {
-      setFlippedIds([]);
+      selectedCardsRef.current = [];
+      setSelectedCards([]);
+      isResolvingRef.current = false;
       setIsResolving(false);
       return;
     }
@@ -881,7 +1024,7 @@ function GameplaySession({
       const nextDuelPlayer1Pairs = isDuelMode && duelTurn === 'player1' ? duelPlayer1Pairs + 1 : duelPlayer1Pairs;
       const nextDuelPlayer2Pairs = isDuelMode && duelTurn === 'player2' ? duelPlayer2Pairs + 1 : duelPlayer2Pairs;
 
-      window.setTimeout(() => {
+      scheduleAfterNextPaint(() => {
         setCards((currentCards) =>
           currentCards.map((item) => (item.pairId === firstCard.pairId ? { ...item, matched: true } : item)),
         );
@@ -891,16 +1034,19 @@ function GameplaySession({
         setDuelPlayer2Pairs(nextDuelPlayer2Pairs);
         setScore((currentScore) => currentScore + matchScore);
         setCombo(nextCombo);
+        showComboBurst(nextCombo);
         setBestCombo(finalBestCombo);
-        setFlippedIds([]);
+        selectedCardsRef.current = [];
+        setSelectedCards([]);
+        isResolvingRef.current = false;
         setIsResolving(false);
         if (isDuelMode) {
           setDuelMessage(`${currentDuelPlayerName} found a pair and goes again.`);
         }
 
-        const gameplayAchievementIds = ['first-match'];
+        const gameplayAchievementIds: string[] = [];
 
-        if (nextCombo >= 5) {
+        if (nextCombo >= 10) {
           gameplayAchievementIds.push('combo-master');
         }
 
@@ -923,12 +1069,12 @@ function GameplaySession({
           });
           setStatus('lost');
         }
-      }, 220);
+      }, matchResolveDelayMs);
 
       return;
     }
 
-    window.setTimeout(() => {
+    scheduleAfterNextPaint(() => {
       setCombo(0);
       setMismatchCount((currentMismatchCount) => currentMismatchCount + 1);
 
@@ -943,7 +1089,8 @@ function GameplaySession({
         setStatus('lost');
       }
 
-      setFlippedIds([]);
+      selectedCardsRef.current = [];
+      setSelectedCards([]);
       if (isDuelMode) {
         const nextTurn: DuelTurn = duelTurn === 'player1' ? 'player2' : 'player1';
         const nextPlayerName = nextTurn === 'player1' ? duelPlayer1Name : duelPlayer2Name;
@@ -953,6 +1100,7 @@ function GameplaySession({
       } else if (isAiMode) {
         setCurrentTurn('ai');
       }
+      isResolvingRef.current = false;
       setIsResolving(false);
     }, mismatchDelayMs);
   };
@@ -961,8 +1109,31 @@ function GameplaySession({
     return () => {
       aiTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
       aiTimersRef.current = [];
+      gameplayTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      gameplayTimersRef.current = [];
     };
   }, []);
+
+  const requestGameplayExit = useCallback((screen: ScreenId) => {
+    if (status !== 'playing') {
+      onNavigate(screen);
+      return;
+    }
+
+    setPendingExitScreen(screen);
+    setShowGiveUpConfirm(true);
+  }, [onNavigate, status]);
+
+  useEffect(() => {
+    if (status !== 'playing') {
+      onRegisterExitHandler(null);
+      return undefined;
+    }
+
+    onRegisterExitHandler(requestGameplayExit);
+
+    return () => onRegisterExitHandler(null);
+  }, [onRegisterExitHandler, requestGameplayExit, status]);
 
   useEffect(() => {
     if (
@@ -970,7 +1141,7 @@ function GameplaySession({
       status !== 'playing' ||
       currentTurn !== 'ai' ||
       isResolving ||
-      flippedIds.length > 0 ||
+      selectedCards.length > 0 ||
       aiTurnInProgressRef.current
     ) {
       return;
@@ -989,15 +1160,17 @@ function GameplaySession({
 
     const firstFlipTimer = window.setTimeout(() => {
       setAiThinking(false);
-      setFlippedIds([firstCard.id]);
+      selectedCardsRef.current = [firstCard];
+      setSelectedCards([firstCard]);
       rememberSeenCards([firstCard]);
 
       const secondFlipTimer = window.setTimeout(() => {
         const turnSnapshot = latestAiStateRef.current;
         const nextMoveCount = turnSnapshot.moves + 1;
-        const nextFlippedIds = [firstCard.id, secondCard.id];
+        const nextSelectedCards = [firstCard, secondCard];
 
-        setFlippedIds(nextFlippedIds);
+        selectedCardsRef.current = nextSelectedCards;
+        setSelectedCards(nextSelectedCards);
         rememberSeenCards([secondCard]);
         setMoves(nextMoveCount);
         setIsResolving(true);
@@ -1012,7 +1185,8 @@ function GameplaySession({
             );
             setMatches(nextMatches);
             setAiPairs(nextAiPairs);
-            setFlippedIds([]);
+            selectedCardsRef.current = [];
+            setSelectedCards([]);
             setIsResolving(false);
             aiTurnInProgressRef.current = false;
 
@@ -1036,7 +1210,8 @@ function GameplaySession({
         const resolveTimer = window.setTimeout(() => {
           setCombo(0);
           setMismatchCount(nextMismatchCount);
-          setFlippedIds([]);
+          selectedCardsRef.current = [];
+          setSelectedCards([]);
           setCurrentTurn('player');
           setIsResolving(false);
           aiTurnInProgressRef.current = false;
@@ -1049,29 +1224,55 @@ function GameplaySession({
   }, [
     currentTurn,
     finishAiGame,
-    flippedIds.length,
     isAiMode,
     isResolving,
     pairCount,
     rememberSeenCards,
+    selectedCards.length,
     status,
   ]);
 
-  const confirmGiveUp = () => {
+  const closeExitConfirm = () => {
     setShowGiveUpConfirm(false);
+    setPendingExitScreen(null);
+  };
+
+  const confirmGiveUp = () => {
+    const exitScreen = pendingExitScreen;
+
+    setShowGiveUpConfirm(false);
+    setPendingExitScreen(null);
+
+    if (status !== 'playing') {
+      if (exitScreen) {
+        onNavigate(exitScreen);
+      }
+
+      return;
+    }
+
     setGoldenPassportActive(false);
     setTemporaryRevealedIds([]);
-    setFlippedIds([]);
+    selectedCardsRef.current = [];
+    setSelectedCards([]);
+    isResolvingRef.current = false;
     setIsResolving(false);
     if (isDuelMode) {
       setDuelOutcome('draw');
       setStatus('lost');
+      if (exitScreen) {
+        onNavigate(exitScreen);
+      }
       return;
     }
 
     onLoss();
     completeGame(false);
     setStatus('lost');
+
+    if (exitScreen) {
+      onNavigate(exitScreen);
+    }
   };
 
   const boardStyle = {
@@ -1085,8 +1286,8 @@ function GameplaySession({
     <section className="screen gameplay-screen">
       <ScreenHeader
         title={getModeLabel(mode)}
-        subtitle={getGameplaySubtitle(mode, world, boardConfig)}
-        action={<button className="small-button" onClick={() => onNavigate('mode-select')} type="button">Modes</button>}
+        subtitle={getGameplaySubtitle(mode, world)}
+        action={<button className="small-button" onClick={() => requestGameplayExit('mode-select')} type="button">Modes</button>}
       />
 
       <div className="gameplay-shell" style={boardStyle}>
@@ -1139,16 +1340,16 @@ function GameplaySession({
         ) : null}
 
         <div className="game-hud">
+          {isTimeAttack ? <span><strong>{formatTime(timeLeft)}</strong> Timer</span> : null}
           <span><strong>{moves}</strong> Moves</span>
-          <span><strong>{isDuelMode ? `${duelPlayer1Pairs}/${pairCount}` : isAiMode ? `${playerPairs}/${pairCount}` : `${matches}/${pairCount}`}</strong> {isDuelMode ? duelPlayer1Name : isAiMode ? 'Player Pairs' : 'Matches'}</span>
-          {isDuelMode ? <span><strong>{duelPlayer2Pairs}/{pairCount}</strong> {duelPlayer2Name}</span> : null}
-          {isAiMode ? <span><strong>{aiPairs}/{pairCount}</strong> AI Pairs</span> : null}
           <span><strong>{score}</strong> Score</span>
-          <span><strong>{combo}x</strong> Combo</span>
-          <span><strong>{bestCombo}x</strong> Best</span>
-          <span><strong>{isTimeAttack ? formatTime(timeLeft) : isSurvival ? remainingMoves : '--'}</strong> {isTimeAttack ? 'Timer' : isSurvival ? 'Moves Left' : 'Calm'}</span>
-          <span><strong>{formatDuration(elapsedSeconds)}</strong> Time</span>
         </div>
+
+        {comboBurst ? (
+          <div className="combo-burst" key={comboBurst} aria-live="polite">
+            COMBO x{comboBurst}
+          </div>
+        ) : null}
 
         {powerUpsEnabled ? (
           <div
@@ -1177,11 +1378,11 @@ function GameplaySession({
                 const isDisabled =
                   isUnavailable ||
                   status !== 'playing' ||
-                  isResolving ||
+      isResolving ||
                   aiThinking ||
                   !isPlayerTurn ||
                   goldenPassportActive ||
-                  flippedIds.length > 0;
+                  selectedCards.length > 0;
                 const showInfo = activePowerUpInfo === powerUp.id;
 
                 return (
@@ -1202,6 +1403,8 @@ function GameplaySession({
                         <img
                           alt=""
                           className="asset-power-up-icon"
+                          decoding="async"
+                          loading="lazy"
                           onLoad={(event) => {
                             const fallbackLabel = event.currentTarget.nextElementSibling;
 
@@ -1257,7 +1460,7 @@ function GameplaySession({
         ) : null}
 
         <div className="memory-grid playable-board" role="grid">
-          {cards.map((card, index) => {
+            {cards.map((card, index) => {
             if (!card) {
               return (
                 <button
@@ -1268,93 +1471,99 @@ function GameplaySession({
                   type="button"
                 >
                   <span className="card-inner">
-                    <span className="card-face card-back">
-                      <img
-                        alt=""
-                        className="asset-card-back"
-                        onLoad={(event) => {
-                          event.currentTarget.closest('.card-back')?.classList.add('has-card-back-image');
-                        }}
-                        onError={(event) => {
-                          event.currentTarget.style.display = 'none';
-                        }}
-                        src="/assets/cards/card-back.png"
-                      />
-                      <span className="card-route-mark" />
-                    </span>
+                    <span className="card-face card-back" />
                   </span>
                 </button>
               );
             }
 
-            const isFaceUp = card.matched || flippedIds.includes(card.id) || temporaryRevealedIds.includes(card.id);
+            const isVisible = isCardVisible(card);
+            const cardFaceUrl = getCardFaceAssetPath(world, card.symbol);
+            const isCardImageLoaded = cardImageStatus[cardFaceUrl] === 'loaded';
+            const isCardLocked = status !== 'playing' || isResolving || aiThinking || !isPlayerTurn || card.matched;
+            const cardStateClass = [
+              'memory-card playable',
+              isVisible ? 'flipped' : '',
+              card.matched ? 'matched' : '',
+              isCardLocked ? 'locked' : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
 
             return (
               <button
-                aria-label={`${isFaceUp ? card.symbol : 'Hidden'} memory card`}
-                className={isFaceUp ? 'memory-card playable flipped' : 'memory-card playable'}
-                disabled={status !== 'playing' || isResolving || aiThinking || !isPlayerTurn || card.matched}
+                aria-label={`${isVisible ? card.symbol : 'Hidden'} memory card`}
+                aria-disabled={isCardLocked}
+                className={cardStateClass}
+                disabled={isCardLocked}
                 key={card.id}
-                onClick={() => handleCardClick(card)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') {
+                    return;
+                  }
+
+                  event.preventDefault();
+
+                  if (!isCardLocked) {
+                    handleCardClick(card);
+                  }
+                }}
+                onPointerUp={() => {
+                  if (!isCardLocked) {
+                    handleCardClick(card);
+                  }
+                }}
                 type="button"
               >
                 <span className="card-inner">
-                  <span className="card-face card-back">
-                    <img
-                      alt=""
-                      className="asset-card-back"
-                      onLoad={(event) => {
-                        event.currentTarget.closest('.card-back')?.classList.add('has-card-back-image');
-                      }}
-                      onError={(event) => {
-                        event.currentTarget.style.display = 'none';
-                      }}
-                      src="/assets/cards/card-back.png"
-                    />
-                    <span className="card-route-mark" />
-                  </span>
-                  <span className="card-face card-front">
-                    <img
-                      alt=""
-                      className="asset-card-face"
-                      onLoad={(event) => {
-                        event.currentTarget.closest('.card-front')?.classList.add('has-card-image');
-                      }}
-                      onError={(event) => {
-                        event.currentTarget.style.display = 'none';
-                      }}
-                      src={getCardFaceAssetPath(world, card.symbol)}
-                    />
+                  {isVisible ? (
+                    <span className={isCardImageLoaded ? 'card-face card-front image-loaded' : 'card-face card-front'}>
+                    {isVisible && isCardImageLoaded ? (
+                      <img
+                        alt=""
+                        className="asset-card-face"
+                        decoding="async"
+                        draggable={false}
+                        loading="lazy"
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none';
+                        }}
+                        src={cardFaceUrl}
+                      />
+                    ) : null}
                     <strong>{card.label}</strong>
                     <small>{card.symbol}</small>
-                  </span>
+                    </span>
+                  ) : (
+                    <span className="card-face card-back" />
+                  )}
                 </span>
               </button>
             );
-          })}
-        </div>
+            })}
+          </div>
 
         <div className="game-action-row">
-          <button className="secondary-button" onClick={onRestart} type="button">Restart</button>
-          <button
-            className="secondary-button danger-action"
-            disabled={status !== 'playing'}
-            onClick={() => setShowGiveUpConfirm(true)}
-            type="button"
-          >
-            Give Up
-          </button>
-          <button className="primary-button" onClick={() => onNavigate('mode-select')} type="button">Back to Modes</button>
-        </div>
+            <button className="secondary-button" onClick={onRestart} type="button">Restart</button>
+            <button
+              className="secondary-button danger-action"
+              disabled={status !== 'playing'}
+              onClick={() => setShowGiveUpConfirm(true)}
+              type="button"
+            >
+              Give Up
+            </button>
+            <button className="primary-button" onClick={() => requestGameplayExit('mode-select')} type="button">Back to Modes</button>
+          </div>
       </div>
 
       {newlyUnlockedAchievements.length > 0 ? (
         <div className="achievement-toast-stack" aria-live="polite">
           {newlyUnlockedAchievements.slice(-3).map((achievement) => (
             <div className="achievement-toast" key={achievement.id}>
-              <span className="achievement-toast-medal" aria-hidden="true">A</span>
+              <span className="achievement-toast-medal" aria-hidden="true">B</span>
               <div>
-                <strong>Achievement Unlocked</strong>
+                <strong>Badge Unlocked</strong>
                 <span>{achievement.title}</span>
               </div>
             </div>
@@ -1362,22 +1571,44 @@ function GameplaySession({
         </div>
       ) : null}
 
+      {(status === 'won' && displayedRewards.leveledUp) || dailyChallengeReward ? (
+        <div className="reward-popup-stack" aria-live="polite">
+          {status === 'won' && displayedRewards.leveledUp ? (
+            <div className="reward-popup">
+              <span className="reward-sparkles" aria-hidden="true" />
+              <strong>Level Up</strong>
+              <span>Level {profile.level}</span>
+            </div>
+          ) : null}
+          {dailyChallengeReward?.dailyMissionsCompleted.length ? (
+            <div className="reward-popup">
+              <span className="reward-sparkles" aria-hidden="true" />
+              <strong>Daily Challenge Complete</strong>
+              <span>+{dailyChallengeReward.rewardXp} XP</span>
+            </div>
+          ) : null}
+          {dailyChallengeReward?.weeklyChallengeCompleted ? (
+            <div className="reward-popup">
+              <span className="reward-sparkles" aria-hidden="true" />
+              <strong>Weekly Challenge Complete</strong>
+              <span>+{dailyChallengeReward.rewardCoins} coins</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {showGiveUpConfirm ? (
-        <div className="victory-overlay" role="dialog" aria-modal="true" aria-label="Give up confirmation">
+        <div className="victory-overlay" role="dialog" aria-modal="true" aria-label="End game confirmation">
           <div className="victory-card confirm-card">
             <span className="badge danger-badge">End Match</span>
-            <h2>Give Up?</h2>
-            <p>
-              {isDuelMode
-                ? 'This will end the local duel without changing profile stats.'
-                : 'This will end the current match as a loss. No XP, coins, or victory achievements will be awarded.'}
-            </p>
+            <h2>End game?</h2>
+            <p>Leaving now will count as a loss.</p>
             <div className="game-action-row">
-              <button className="secondary-button" onClick={() => setShowGiveUpConfirm(false)} type="button">
-                Continue Playing
+              <button className="secondary-button" onClick={closeExitConfirm} type="button">
+                Stay
               </button>
               <button className="primary-button danger-action" onClick={confirmGiveUp} type="button">
-                Give Up
+                End Game
               </button>
             </div>
           </div>

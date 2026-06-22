@@ -10,12 +10,12 @@ export function TopStatusBar({ profile }: TopStatusBarProps) {
   return (
     <header className="top-status">
       <div className="player-chip">
-        <div className="avatar" aria-hidden="true">
-          {profile.avatar}
+        <div className="explorer-avatar" aria-hidden="true">
+          <span>🦊</span>
         </div>
         <div>
-          <span className="eyebrow">Level {profile.level}</span>
           <strong>{profile.name}</strong>
+          <span className="top-rank">Level {profile.level}</span>
         </div>
       </div>
       <div className="status-metrics">
