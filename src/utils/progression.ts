@@ -45,6 +45,7 @@ export type AchievementProgress = {
 type StoredProfile = Pick<
   PlayerProfile,
   | 'level'
+  | 'name'
   | 'xp'
   | 'coins'
   | 'totalGames'
@@ -463,6 +464,7 @@ function hydrateProfile(storedProfile?: Partial<StoredProfile>): PlayerProfile {
   return {
     ...defaultProfile,
     ...storedProfile,
+    name: typeof storedProfile?.name === 'string' && storedProfile.name.trim() ? storedProfile.name.trim() : defaultProfile.name,
     level,
     nextLevelXp: getXpForLevel(level),
     losses: storedProfile?.losses ?? defaultProfile.losses,
@@ -498,6 +500,7 @@ export function loadProfile(): PlayerProfile {
 
 export function saveProfile(profile: PlayerProfile): void {
   const storedProfile: StoredProfile = {
+    name: profile.name,
     level: profile.level,
     xp: profile.xp,
     coins: profile.coins,

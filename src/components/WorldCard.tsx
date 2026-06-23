@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { World } from '../types/game';
+import { useLanguage } from '../i18n/useLanguage';
 import { ProgressBar } from './ProgressBar';
 
 type WorldCardProps = {
@@ -21,7 +22,9 @@ function getWorldAssetId(worldId: string): string {
 }
 
 export function WorldCard({ world, selected, onSelect }: WorldCardProps) {
+  const { t } = useLanguage();
   const worldAssetId = getWorldAssetId(world.id);
+  const translatedDifficulty = t(`difficulties.${world.difficulty}`);
 
   return (
     <button
@@ -58,19 +61,19 @@ export function WorldCard({ world, selected, onSelect }: WorldCardProps) {
           <span className="scene-landform landform-front" />
           <span className="scene-route" />
         </div>
-        <div className="unlock-indicator">{world.unlocked ? 'Open' : 'Locked'}</div>
+        <div className="unlock-indicator">{world.unlocked ? t('common.open') : t('common.locked')}</div>
         {world.sampleCardSymbols.slice(0, 4).map((symbol) => (
           <span key={symbol}>{symbol.slice(0, 2)}</span>
         ))}
       </div>
       <div className="world-copy">
         <div className="world-meta-row">
-          <span className="badge destination-badge">{world.difficulty}</span>
-          <span className="badge">{world.unlocked ? 'Passport Ready' : 'Unlock Soon'}</span>
+          <span className="badge destination-badge">{translatedDifficulty}</span>
+          <span className="badge">{world.unlocked ? t('worldsScreen.passportReady') : t('worldsScreen.unlockSoon')}</span>
         </div>
-        <h2>{world.name}</h2>
-        <p>{world.description}</p>
-        <ProgressBar value={world.progress} label={`${world.progress}% explored`} />
+        <h2>{t(`worlds.${world.id}.name`)}</h2>
+        <p>{t(`worlds.${world.id}.description`)}</p>
+        <ProgressBar value={world.progress} label={t('worldsScreen.explored', { progress: world.progress })} />
       </div>
     </button>
   );

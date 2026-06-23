@@ -1,5 +1,6 @@
 import type { PlayerProfile, ScreenId, World } from '../types/game';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { useLanguage } from '../i18n/useLanguage';
 
 type MainMenuProps = {
   availableWorlds: World[];
@@ -8,6 +9,7 @@ type MainMenuProps = {
 };
 
 export function MainMenu({ availableWorlds, onNavigate }: MainMenuProps) {
+  const { t } = useLanguage();
   const unlockedWorlds = availableWorlds.filter((world) => world.unlocked).length;
   const currentWorldIndex = Math.max(0, unlockedWorlds - 1);
 
@@ -26,26 +28,26 @@ export function MainMenu({ availableWorlds, onNavigate }: MainMenuProps) {
   return (
     <section className="screen main-menu">
       <ScreenHeader
-        title="Around the World"
-        subtitle="Pick a destination, master every board, and build your explorer legacy."
+        title={t('home.title')}
+        subtitle={t('home.subtitle')}
       />
 
       <div className="hero-panel">
         <div className="hero-copy">
-          <h2>Start Your Journey</h2>
-          <p>Explore memory routes across the world.</p>
+          <h2>{t('home.heroTitle')}</h2>
+          <p>{t('home.heroText')}</p>
           <button className="primary-button" onClick={() => onNavigate('world-select')} type="button">
-            Start Journey
+            {t('home.startJourney')}
           </button>
         </div>
       </div>
 
       <div className="journey-panel">
         <div className="journey-header">
-          <span className="eyebrow">Explorer Journey</span>
+          <span className="eyebrow">{t('home.journey')}</span>
           <strong>{unlockedWorlds}/{availableWorlds.length}</strong>
         </div>
-        <div className="journey-map" aria-label="World unlock path">
+        <div className="journey-map" aria-label={t('home.worldUnlockPath')}>
           {availableWorlds.map((world, index) => (
             <div
               className={`journey-node ${world.unlocked ? 'unlocked' : 'locked'} ${index === currentWorldIndex ? 'current' : ''}`}
@@ -63,8 +65,8 @@ export function MainMenu({ availableWorlds, onNavigate }: MainMenuProps) {
                 />
               </span>
               <div>
-                <strong>{world.name.replace('Wonders of ', '')}</strong>
-                <small>{world.unlocked ? 'Open' : 'Locked'}</small>
+                <strong>{t(`worlds.${world.id}.shortName`)}</strong>
+                <small>{world.unlocked ? t('common.open') : t('common.locked')}</small>
               </div>
             </div>
           ))}

@@ -3,6 +3,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { ProgressBar } from '../components/ProgressBar';
 import { percent } from '../utils/format';
 import { getAchievementsForProfile } from '../utils/progression';
+import { useLanguage } from '../i18n/useLanguage';
 
 type AchievementsProps = {
   profile: PlayerProfile;
@@ -55,15 +56,23 @@ function groupAchievementFamilies(achievements: Achievement[]): BadgeFamily[] {
 }
 
 export function Achievements({ profile }: AchievementsProps) {
+  const { t } = useLanguage();
   const badgeFamilies = groupAchievementFamilies(getAchievementsForProfile(profile));
 
   return (
     <section className="screen">
-      <ScreenHeader title="Badges" subtitle="Bronze, Silver, and Gold trophies for your expedition milestones." />
+      <ScreenHeader title={t('achievements.title')} subtitle={t('achievements.subtitle')} />
       <div className="badge-vault badge-family-vault">
         {badgeFamilies.map((family, index) => {
           const complete = family.tiers.every((achievement) => achievement.unlocked);
-          const tierLabel = complete ? 'Complete' : family.current.tier ?? (family.current.unlocked ? 'Unlocked' : 'Locked');
+          const tierLabel = complete
+            ? t('common.complete')
+            : family.current.tier
+              ? t(`tiers.${family.current.tier}`)
+              : (family.current.unlocked ? t('common.unlocked') : t('common.locked'));
+          const chainTitle = family.current.chain ? t(`achievementChains.${family.current.chain}`) : t(`achievementsList.${family.current.id}.title`);
+          const currentTitle = t(`achievementsList.${family.current.id}.title`);
+          const currentDescription = t(`achievementsList.${family.current.id}.description`);
 
           return (
             <article
@@ -80,12 +89,14 @@ export function Achievements({ profile }: AchievementsProps) {
               </div>
               <div>
                 <span className="badge">{tierLabel}</span>
-                <h2>{family.chain}</h2>
-                <strong className="achievement-chain">{family.current.title}</strong>
-                <p title={family.current.description}>{complete ? 'All tiers earned.' : family.current.description}</p>
-                <small className="achievement-reward">{complete ? 'Tier chain complete' : `Next reward: +${family.current.reward} XP`}</small>
+                <h2>{chainTitle}</h2>
+                <strong className="achievement-chain">{currentTitle}</strong>
+                <p title={currentDescription}>{complete ? t('achievements.allTiersEarned') : currentDescription}</p>
+                <small className="achievement-reward">
+                  {complete ? t('achievements.tierChainComplete') : t('achievements.nextReward', { reward: family.current.reward })}
+                </small>
               </div>
-              <div className="tier-medal-row" aria-label={`${family.chain} tier progress`}>
+              <div className="tier-medal-row" aria-label={t('achievements.tierProgress', { chain: chainTitle })}>
                 {family.tiers.map((tier) => (
                   <span
                     className={[
@@ -94,7 +105,7 @@ export function Achievements({ profile }: AchievementsProps) {
                       tier.unlocked ? 'earned' : '',
                     ].filter(Boolean).join(' ')}
                     key={tier.id}
-                    title={`${tier.tier ?? tier.title}: ${tier.unlocked ? 'earned' : 'locked'}`}
+                    title={`${tier.tier ? t(`tiers.${tier.tier}`) : t(`achievementsList.${tier.id}.title`)}: ${tier.unlocked ? t('achievements.earned') : t('common.locked')}`}
                   >
                     {tier.tier?.[0] ?? 'B'}
                   </span>
@@ -102,7 +113,7 @@ export function Achievements({ profile }: AchievementsProps) {
               </div>
               <ProgressBar
                 value={complete ? 100 : percent(family.current.progress, family.current.target)}
-                label={complete ? 'Complete' : `${family.current.progress} / ${family.current.target}`}
+                label={complete ? t('common.complete') : `${family.current.progress} / ${family.current.target}`}
               />
             </article>
           );

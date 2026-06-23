@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Achievement, GameMode, PlayerProfile, PowerUpId, ScreenId, World } from '../types/game';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { useLanguage } from '../i18n/useLanguage';
 import type {
   AchievementProgress,
   DailyChallengeGameResult,
@@ -291,22 +292,6 @@ function getPowerUpAssetPath(powerUpId: PowerUpId): string {
   return `/assets/icons/powerup-${powerUpId}.png`;
 }
 
-function getPowerUpName(powerUpId: PowerUpId): string {
-  return powerUps.find((powerUp) => powerUp.id === powerUpId)?.name ?? powerUpId;
-}
-
-function getModeLabel(mode: GameMode): string {
-  if (mode.id === 'ai') {
-    return 'Player vs AI';
-  }
-
-  if (mode.id === 'duel') {
-    return '2 Player Duel';
-  }
-
-  return mode.name;
-}
-
 function getGameplaySubtitle(mode: GameMode, world: World): string {
   const routeLabel = world.name;
 
@@ -415,6 +400,7 @@ function GameplaySession({
   onVictory,
   onWorldModeComplete,
 }: GameplaySessionProps) {
+  const { t } = useLanguage();
   const boardConfig = useMemo(() => getBoardConfig(world), [world]);
   const [cards, setCards] = useState<MemoryCard[]>(() => buildDeck(world, boardConfig));
   const [cardImageStatus, setCardImageStatus] = useState<Record<string, BoardImageStatus>>({});
@@ -640,11 +626,11 @@ function GameplaySession({
     setRewardToasts((currentToasts) => [
       ...currentToasts,
       ...nextAchievements.map((achievement) => ({
-        detail: achievement.title,
+        detail: t(`achievementsList.${achievement.id}.title`),
         id: `badge-${achievement.id}-${Date.now()}`,
         kind: 'badge' as const,
-        reward: `+${achievement.reward} XP`,
-        title: 'Badge Unlocked',
+        reward: `+${achievement.reward} ${t('common.xp')}`,
+        title: t('toasts.badgeUnlocked'),
       })),
     ]);
     setNewlyUnlockedAchievements((currentAchievements) => {
@@ -657,7 +643,7 @@ function GameplaySession({
       setNewlyUnlockedAchievements([]);
       setRewardToasts([]);
     }, 3200);
-  }, []);
+  }, [t]);
 
   const showPowerUpMessage = (message: string) => {
     setPowerUpMessage(message);
@@ -722,28 +708,28 @@ function GameplaySession({
       setRewardToasts((currentToasts) => [
         ...currentToasts,
         ...update.dailyMissionsCompleted.map((mission) => ({
-          detail: mission.title,
+          detail: t(`dailyMissions.${mission.type}.title`),
           id: `daily-${mission.id}-${Date.now()}`,
           kind: 'daily' as const,
-          reward: `+${mission.rewardXp} XP +${mission.rewardCoins} coins`,
-          title: 'Daily Mission Complete',
+          reward: `+${mission.rewardXp} ${t('common.xp')} +${mission.rewardCoins} ${t('common.coins')}`,
+          title: t('toasts.dailyMissionComplete'),
         })),
         ...(update.dailyChestUnlocked
           ? [{
-              detail: 'Daily chest opened',
+              detail: t('daily.dailyChest'),
               id: `daily-chest-${Date.now()}`,
               kind: 'chest' as const,
-              reward: `+${update.rewardXp} XP +${update.rewardCoins} coins`,
-              title: 'Daily Chest Unlocked',
+              reward: `+${update.rewardXp} ${t('common.xp')} +${update.rewardCoins} ${t('common.coins')}`,
+              title: t('toasts.dailyChestUnlocked'),
             }]
           : []),
         ...(update.weeklyChallengeCompleted
           ? [{
-              detail: 'Trail Master Week',
+              detail: t('daily.weeklyChallenge'),
               id: `weekly-${Date.now()}`,
               kind: 'weekly' as const,
-              reward: `+${update.rewardXp} XP +${update.rewardCoins} coins`,
-              title: 'Weekly Challenge Complete',
+              reward: `+${update.rewardXp} ${t('common.xp')} +${update.rewardCoins} ${t('common.coins')}`,
+              title: t('toasts.weeklyChallengeComplete'),
             }]
           : []),
       ]);
@@ -754,7 +740,7 @@ function GameplaySession({
       showAchievementUnlocks(update.newlyUnlockedAchievements);
     }
     rememberLevelRewards(update.levelRewards);
-  }, [onDailyChallengeCheck, rememberLevelRewards, showAchievementUnlocks]);
+  }, [onDailyChallengeCheck, rememberLevelRewards, showAchievementUnlocks, t]);
 
   const checkLiveRewards = useCallback((nextBestCombo: number, nextPowerUpsUsed: number) => {
     if (isDuelMode || isZen) {
@@ -992,7 +978,7 @@ function GameplaySession({
     }
 
     if ((profile.powerUpInventory[powerUp.id] ?? 0) <= 0) {
-      showPowerUpMessage(`Buy ${powerUp.name} in the Travel Gear Shop first.`);
+      showPowerUpMessage(`${t(`shopItems.${powerUp.id}.name`)}: ${t('common.shop')}`);
       return;
     }
 
@@ -1110,7 +1096,7 @@ function GameplaySession({
     }
 
     setSouvenirBonusActive(true);
-    showPowerUpMessage('Souvenir Bonus reserved for victory.');
+    showPowerUpMessage(`${t('shopItems.souvenir.name')} ${t('common.claimed')}.`);
   };
 
   useEffect(() => {
@@ -1612,26 +1598,26 @@ function GameplaySession({
   return (
     <section className="screen gameplay-screen">
       <ScreenHeader
-        title={getModeLabel(mode)}
-        subtitle={getGameplaySubtitle(mode, world)}
-        action={<button className="small-button" onClick={() => requestGameplayExit('mode-select')} type="button">Modes</button>}
+        title={t(`modes.${mode.id}.name`)}
+        subtitle={getGameplaySubtitle(mode, { ...world, name: t(`worlds.${world.id}.name`) })}
+        action={<button className="small-button" onClick={() => requestGameplayExit('mode-select')} type="button">{t('common.modes')}</button>}
       />
 
       <div className="gameplay-shell" style={boardStyle}>
         <div className="game-status-ribbon">
-          <span className="badge destination-badge">{world.difficulty}</span>
-          <span className="badge">{mode.name}</span>
-          {isAiMode ? <span className="badge timer-badge">{currentTurn === 'player' ? 'Player Turn' : 'AI Turn'}</span> : null}
+          <span className="badge destination-badge">{t(`difficulties.${world.difficulty}`)}</span>
+          <span className="badge">{t(`modes.${mode.id}.name`)}</span>
+          {isAiMode ? <span className="badge timer-badge">{currentTurn === 'player' ? t('common.playerTurn') : `${t('common.ai')} Turn`}</span> : null}
           {isDuelMode ? <span className="badge timer-badge">{currentDuelPlayerName}'s Turn</span> : null}
-          {isSurvival ? <span className="badge danger-badge">{remainingMoves} moves left</span> : null}
+          {isSurvival ? <span className="badge danger-badge">{remainingMoves} {t('common.moves')}</span> : null}
           {isTimeAttack ? <span className="badge timer-badge">{formatTime(timeLeft)}</span> : null}
         </div>
 
         {isAiMode ? (
           <div className="ai-duel-panel">
             <div>
-              <span className="eyebrow">AI Difficulty</span>
-              <div className="ai-difficulty-selector" role="group" aria-label="AI difficulty">
+              <span className="eyebrow">{t('gameplay.aiDifficulty')}</span>
+              <div className="ai-difficulty-selector" role="group" aria-label={t('gameplay.aiDifficulty')}>
                 {(['easy', 'medium', 'hard'] as AiDifficulty[]).map((difficulty) => (
                   <button
                     className={aiDifficulty === difficulty ? 'selected' : ''}
@@ -1650,8 +1636,8 @@ function GameplaySession({
               </div>
             </div>
             <div className="turn-indicator" aria-live="polite">
-              <span className="eyebrow">Current Turn</span>
-              <strong>{aiThinking ? 'AI is thinking...' : currentTurn === 'player' ? 'Player' : 'AI'}</strong>
+              <span className="eyebrow">{t('gameplay.currentTurn')}</span>
+              <strong>{aiThinking ? t('gameplay.aiThinking') : currentTurn === 'player' ? t('common.player') : t('common.ai')}</strong>
             </div>
           </div>
         ) : null}
@@ -1671,9 +1657,9 @@ function GameplaySession({
         ) : null}
 
         <div className="game-hud">
-          {isTimeAttack ? <span><strong>{formatTime(timeLeft)}</strong> Timer</span> : null}
-          <span><strong>{moves}</strong> Moves</span>
-          <span><strong>{score}</strong> Score</span>
+          {isTimeAttack ? <span><strong>{formatTime(timeLeft)}</strong> {t('common.timer')}</span> : null}
+          <span><strong>{moves}</strong> {t('common.moves')}</span>
+          <span><strong>{score}</strong> {t('common.score')}</span>
         </div>
 
         {comboBurst ? (
@@ -1699,8 +1685,8 @@ function GameplaySession({
             ref={powerUpPanelRef}
           >
             <div className="power-up-header">
-              <span className="eyebrow">Travel Gear</span>
-              <strong>{goldenPassportActive ? 'Golden Passport active' : 'Once per game'}</strong>
+              <span className="eyebrow">{t('gameplay.powerUpsHeader')}</span>
+              <strong>{goldenPassportActive ? t('gameplay.goldenPassportActive') : t('gameplay.oncePerGame')}</strong>
             </div>
             <div className="power-up-bar">
               {powerUps.map((powerUp) => {
@@ -1752,12 +1738,12 @@ function GameplaySession({
                         <span>{powerUp.icon}</span>
                       </span>
                       <span className="power-up-copy">
-                        <strong>{powerUp.name}</strong>
+                        <strong>{t(`shopItems.${powerUp.id}.name`)}</strong>
                         <small>x{quantity}</small>
                       </span>
                     </button>
                     <button
-                      aria-label={`About ${powerUp.name}`}
+                      aria-label={`About ${t(`shopItems.${powerUp.id}.name`)}`}
                       aria-expanded={showInfo}
                       className={showInfo ? 'power-up-info-button active' : 'power-up-info-button'}
                       onClick={(event) => {
@@ -1780,8 +1766,8 @@ function GameplaySession({
                   .filter((powerUp) => powerUp.id === activePowerUpInfo)
                   .map((powerUp) => (
                     <div key={powerUp.id}>
-                      <strong>{powerUp.name}</strong>
-                      <span>{powerUp.description}</span>
+                      <strong>{t(`shopItems.${powerUp.id}.name`)}</strong>
+                      <span>{t(`shopItems.${powerUp.id}.description`)}</span>
                       <span>{powerUp.usage}</span>
                     </div>
                   ))}
@@ -1796,7 +1782,7 @@ function GameplaySession({
             if (!card) {
               return (
                 <button
-                  aria-label="Unavailable memory card"
+                  aria-label={t('gameplay.invalidCard')}
                   className="memory-card playable card-invalid"
                   disabled
                   key={`invalid-card-${index}`}
@@ -1824,7 +1810,7 @@ function GameplaySession({
 
             return (
               <button
-                aria-label={`${isVisible ? card.symbol : 'Hidden'} memory card`}
+                aria-label={t('gameplay.memoryCard', { label: isVisible ? card.symbol : t('gameplay.hiddenCard') })}
                 aria-disabled={isCardLocked}
                 className={cardStateClass}
                 disabled={isCardLocked}
@@ -1882,7 +1868,7 @@ function GameplaySession({
               onClick={() => setIsPaused((currentPaused) => !currentPaused)}
               type="button"
             >
-              {isPaused ? 'Resume' : 'Pause'}
+              {isPaused ? t('common.resume') : t('common.pause')}
             </button>
             <button
               className="secondary-button danger-action"
@@ -1890,16 +1876,16 @@ function GameplaySession({
               onClick={() => setShowGiveUpConfirm(true)}
               type="button"
             >
-              Give Up
+              {t('gameplay.giveUp')}
             </button>
-            <button className="secondary-button" onClick={() => requestGameplayExit('mode-select')} type="button">Modes</button>
+            <button className="secondary-button" onClick={() => requestGameplayExit('mode-select')} type="button">{t('common.modes')}</button>
           </div>
       </div>
 
       {status === 'playing' && isPaused ? (
         <div className="paused-banner" role="status" aria-live="polite">
-          <strong>Paused</strong>
-          <span>Cards are locked until you resume.</span>
+          <strong>{t('gameplay.paused')}</strong>
+          <span>{t('gameplay.pausedText')}</span>
         </div>
       ) : null}
 
@@ -1919,17 +1905,17 @@ function GameplaySession({
       ) : null}
 
       {showGiveUpConfirm ? (
-        <div className="victory-overlay" role="dialog" aria-modal="true" aria-label="End game confirmation">
+        <div className="victory-overlay" role="dialog" aria-modal="true" aria-label={t('gameplay.endGameQuestion')}>
           <div className="victory-card confirm-card">
-            <span className="badge danger-badge">End Match</span>
-            <h2>End game?</h2>
-            <p>Leaving now will count as a loss.</p>
+            <span className="badge danger-badge">{t('gameplay.endMatch')}</span>
+            <h2>{t('gameplay.endGameQuestion')}</h2>
+            <p>{t('gameplay.leavingLoss')}</p>
             <div className="game-action-row">
               <button className="secondary-button" onClick={closeExitConfirm} type="button">
-                Stay
+                {t('common.stay')}
               </button>
               <button className="primary-button danger-action" onClick={confirmGiveUp} type="button">
-                End Game
+                {t('common.endGame')}
               </button>
             </div>
           </div>
@@ -1937,30 +1923,30 @@ function GameplaySession({
       ) : null}
 
       {status === 'won' && celebrationStep === 'level' ? (
-        <div className="victory-overlay celebration-overlay" onClick={advanceCelebration} role="dialog" aria-modal="true" aria-label="Level up">
+        <div className="victory-overlay celebration-overlay" onClick={advanceCelebration} role="dialog" aria-modal="true" aria-label={t('gameplay.levelUp')}>
           <div className="celebration-card level-celebration" onClick={(event) => event.stopPropagation()}>
             <span className="celebration-medal" aria-hidden="true">★</span>
-            <strong>LEVEL UP!</strong>
-            <h2>Level {displayedRewards.nextLevel ?? profile.level} Reached</h2>
-            <p>Your explorer rank increased.</p>
+            <strong>{t('gameplay.levelUp')}</strong>
+            <h2>{t('gameplay.levelReached', { level: displayedRewards.nextLevel ?? profile.level })}</h2>
+            <p>{t('gameplay.yourRankIncreased')}</p>
             {displayedRewards.levelRewards.length > 0 ? (
-              <div className="level-reward-list" aria-label="Level up rewards">
-                <span className="level-reward-heading">Rewards</span>
+              <div className="level-reward-list" aria-label={t('common.rewards')}>
+                <span className="level-reward-heading">{t('common.rewards')}</span>
                 {displayedRewards.levelRewards.map((reward) => (
                   <div className="level-reward-bundle" key={reward.level}>
-                    <span>+{reward.coins} coins</span>
+                    <span>+{reward.coins} {t('common.coins')}</span>
                     {reward.powerUps.map((powerUp) => (
                       <span key={`${reward.level}-${powerUp.id}`}>
-                        {getPowerUpName(powerUp.id)} x{powerUp.quantity}
+                        {t(`shopItems.${powerUp.id}.name`)} x{powerUp.quantity}
                       </span>
                     ))}
                   </div>
                 ))}
               </div>
             ) : (
-              <small>New rewards unlocked</small>
+              <small>{t('gameplay.worldReady')}</small>
             )}
-            <button className="primary-button wide" onClick={advanceCelebration} type="button">Continue Journey</button>
+            <button className="primary-button wide" onClick={advanceCelebration} type="button">{t('common.continueJourney')}</button>
           </div>
         </div>
       ) : null}
@@ -1971,15 +1957,15 @@ function GameplaySession({
           onClick={advanceCelebration}
           role="dialog"
           aria-modal="true"
-          aria-label="World unlocked"
+          aria-label={t('gameplay.worldUnlocked')}
           style={displayedRewards.unlockedWorlds[0] ? { '--unlock-world-image': `url("/assets/backgrounds/${getWorldAssetId(displayedRewards.unlockedWorlds[0].id)}.png")` } as CSSProperties : undefined}
         >
           <div className="celebration-card world-celebration" onClick={(event) => event.stopPropagation()}>
             <span className="celebration-medal" aria-hidden="true">✓</span>
-            <strong>WORLD UNLOCKED!</strong>
-            <h2>{displayedRewards.unlockedWorlds.map((nextWorld) => nextWorld.name).join(', ')}</h2>
-            <p>A new destination is ready.</p>
-            <button className="primary-button wide" onClick={advanceCelebration} type="button">Continue Journey</button>
+            <strong>{t('gameplay.worldUnlocked')}</strong>
+            <h2>{displayedRewards.unlockedWorlds.map((nextWorld) => t(`worlds.${nextWorld.id}.name`)).join(', ')}</h2>
+            <p>{t('gameplay.worldReady')}</p>
+            <button className="primary-button wide" onClick={advanceCelebration} type="button">{t('common.continueJourney')}</button>
           </div>
         </div>
       ) : null}
@@ -1989,7 +1975,7 @@ function GameplaySession({
           className="victory-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label={status === 'won' ? 'Victory' : 'Game over'}
+          aria-label={status === 'won' ? t('common.victory') : t('gameplay.routeFailed')}
         >
           <div className={`victory-card end-card ${status === 'won' ? 'end-card-win' : 'end-card-loss'}`}>
             {status === 'won' ? (
@@ -2003,69 +1989,69 @@ function GameplaySession({
             ) : null}
             <span className={status === 'won' ? 'badge premium-badge' : 'badge danger-badge'}>
               {isDuelMode && duelOutcome
-                ? `Winner: ${duelOutcome === 'player1' ? duelPlayer1Name : duelOutcome === 'player2' ? duelPlayer2Name : 'Draw'}`
+                ? `${t('common.winner')}: ${duelOutcome === 'player1' ? duelPlayer1Name : duelOutcome === 'player2' ? duelPlayer2Name : t('common.draw')}`
                 : isAiMode && aiOutcome
-                  ? `Winner: ${aiOutcome === 'player' ? 'Player' : aiOutcome === 'ai' ? 'AI' : 'Draw'}`
-                  : status === 'won' ? 'Route Complete' : 'Route Failed'}
+                  ? `${t('common.winner')}: ${aiOutcome === 'player' ? t('common.player') : aiOutcome === 'ai' ? t('common.ai') : t('common.draw')}`
+                  : status === 'won' ? t('gameplay.routeComplete') : t('gameplay.routeFailed')}
             </span>
             <h2>
               {status === 'lost'
-                ? 'Defeat'
+                ? t('common.defeat')
                 : isDuelMode && duelOutcome
                 ? duelOutcome === 'draw'
-                  ? 'Draw'
-                  : `${duelOutcome === 'player1' ? duelPlayer1Name : duelPlayer2Name} Wins`
+                  ? t('common.draw')
+                  : `${duelOutcome === 'player1' ? duelPlayer1Name : duelPlayer2Name} ${t('common.wins')}`
                 : isAiMode && aiOutcome
                 ? aiOutcome === 'ai'
-                  ? 'AI Wins'
+                  ? `${t('common.ai')} ${t('common.wins')}`
                   : aiOutcome === 'draw'
-                    ? 'Draw'
-                    : 'Victory!'
+                    ? t('common.draw')
+                    : t('common.victory')
                 : status === 'won'
-                  ? 'Victory!'
+                  ? t('common.victory')
                   : isTimeAttack
-                    ? 'Time Up'
+                    ? t('gameplay.timeUp')
                     : isSurvival
-                      ? 'No Moves Left'
+                      ? t('gameplay.noMovesLeft')
                       : 'Match Ended'}
             </h2>
             <p>
               {isDuelMode
-                ? 'Local duel complete. No XP, coins, or profile stats were changed.'
+                ? `${t(`modes.${mode.id}.name`)} ${t('common.complete')}.`
                 : isAiMode && aiOutcome
                 ? aiOutcome === 'ai'
-                  ? 'The AI claimed more pairs. This counts as a loss with no XP or coins.'
-                  : `You ${aiOutcome === 'draw' ? 'matched the AI' : 'beat the AI'} in ${world.name}.`
+                  ? `${t('common.ai')} ${t('common.wins')}.`
+                  : `${t('gameplay.routeComplete')}: ${t(`worlds.${world.id}.name`)}.`
                 : status === 'won'
-                ? `You completed ${world.name} in ${mode.name}.`
-                : 'Restart the route or return to modes to try a different rule set.'}
+                ? `${t('gameplay.routeComplete')}: ${t(`worlds.${world.id}.name`)} - ${t(`modes.${mode.id}.name`)}.`
+                : t('gameplay.routeFailedText')}
             </p>
             {status === 'won' && !isDuelMode && (displayedRewards.earnedXp > 0 || displayedRewards.earnedCoins > 0) ? (
               <div className="reward-rain">
-                <span>+{displayedRewards.earnedXp} XP</span>
-                <span>+{displayedRewards.earnedCoins} coins</span>
+                <span>+{displayedRewards.earnedXp} {t('common.xp')}</span>
+                <span>+{displayedRewards.earnedCoins} {t('common.coins')}</span>
               </div>
             ) : null}
             <div className="victory-stats">
-              {isDuelMode ? <span><strong>{duelPlayer1Pairs}</strong> {duelPlayer1Name} Pairs</span> : null}
-              {isDuelMode ? <span><strong>{duelPlayer2Pairs}</strong> {duelPlayer2Name} Pairs</span> : null}
-              {isDuelMode ? <span><strong>{duelOutcome === 'player1' ? duelPlayer1Name : duelOutcome === 'player2' ? duelPlayer2Name : 'Draw'}</strong> Winner</span> : null}
-              {isAiMode ? <span><strong>{playerPairs}</strong> Player Pairs</span> : null}
-              {isAiMode ? <span><strong>{aiPairs}</strong> AI Pairs</span> : null}
-              {isAiMode ? <span><strong>{aiOutcome === 'player' ? 'Player' : aiOutcome === 'ai' ? 'AI' : 'Draw'}</strong> Winner</span> : null}
-              <span><strong>{score}</strong> Score</span>
-              <span><strong>{moves}</strong> Moves</span>
-              <span><strong>{bestCombo}x</strong> Best Combo</span>
-              <span><strong>{formatDuration(elapsedSeconds)}</strong> Time</span>
-              <span><strong>{status === 'won' && !isDuelMode ? displayedRewards.earnedXp : 0}</strong> XP</span>
-              <span><strong>{status === 'won' && !isDuelMode ? displayedRewards.earnedCoins : 0}</strong> Coins</span>
+              {isDuelMode ? <span><strong>{duelPlayer1Pairs}</strong> {duelPlayer1Name} {t('common.pairs')}</span> : null}
+              {isDuelMode ? <span><strong>{duelPlayer2Pairs}</strong> {duelPlayer2Name} {t('common.pairs')}</span> : null}
+              {isDuelMode ? <span><strong>{duelOutcome === 'player1' ? duelPlayer1Name : duelOutcome === 'player2' ? duelPlayer2Name : t('common.draw')}</strong> {t('common.winner')}</span> : null}
+              {isAiMode ? <span><strong>{playerPairs}</strong> {t('common.player')} {t('common.pairs')}</span> : null}
+              {isAiMode ? <span><strong>{aiPairs}</strong> {t('common.ai')} {t('common.pairs')}</span> : null}
+              {isAiMode ? <span><strong>{aiOutcome === 'player' ? t('common.player') : aiOutcome === 'ai' ? t('common.ai') : t('common.draw')}</strong> {t('common.winner')}</span> : null}
+              <span><strong>{score}</strong> {t('common.score')}</span>
+              <span><strong>{moves}</strong> {t('common.moves')}</span>
+              <span><strong>{bestCombo}x</strong> {t('common.bestCombo')}</span>
+              <span><strong>{formatDuration(elapsedSeconds)}</strong> {t('common.time')}</span>
+              <span><strong>{status === 'won' && !isDuelMode ? displayedRewards.earnedXp : 0}</strong> {t('common.xp')}</span>
+              <span><strong>{status === 'won' && !isDuelMode ? displayedRewards.earnedCoins : 0}</strong> {t('common.coins')}</span>
             </div>
             <div className="game-action-row">
               <button className="secondary-button" onClick={onRestart} type="button">
-                {status === 'lost' ? 'Try Again' : 'Restart'}
+                {status === 'lost' ? t('common.tryAgain') : t('common.restart')}
               </button>
               <button className="primary-button" onClick={() => onNavigate(status === 'lost' ? 'main-menu' : 'mode-select')} type="button">
-                {status === 'lost' ? 'Home' : 'Back to Modes'}
+                {status === 'lost' ? t('common.home') : t('common.backToModes')}
               </button>
             </div>
           </div>

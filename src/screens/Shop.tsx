@@ -4,6 +4,7 @@ import type { PlayerProfile } from '../types/game';
 import { formatNumber } from '../utils/format';
 import type { ShopActionResult } from '../utils/progression';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { useLanguage } from '../i18n/useLanguage';
 
 type ShopProps = {
   profile: PlayerProfile;
@@ -16,6 +17,7 @@ function getPowerUpAssetPath(powerUpId: string): string {
 
 export function Shop({ profile, onPurchaseItem }: ShopProps) {
   const [shopMessage, setShopMessage] = useState('');
+  const { t } = useLanguage();
 
   const handleShopResult = (result: ShopActionResult) => {
     setShopMessage(result.message);
@@ -23,15 +25,16 @@ export function Shop({ profile, onPurchaseItem }: ShopProps) {
 
   return (
     <section className="screen">
-      <ScreenHeader title="Travel Gear Shop" subtitle="Stock up on power-ups before your next memory route." />
+      <ScreenHeader title={t('shop.title')} subtitle={t('shop.subtitle')} />
       <div className="shop-wallet">
-        <span className="eyebrow">Your Coins</span>
+        <span className="eyebrow">{t('shop.yourCoins')}</span>
         <strong>{formatNumber(profile.coins)}</strong>
       </div>
       {shopMessage ? <div className="shop-message" role="status">{shopMessage}</div> : null}
       <div className="shop-grid">
         {shopItems.map((item) => {
           const quantity = profile.powerUpInventory[item.id] ?? 0;
+          const itemName = t(`shopItems.${item.id}.name`);
 
           return (
             <article className="shop-card" key={item.id}>
@@ -53,20 +56,20 @@ export function Shop({ profile, onPurchaseItem }: ShopProps) {
                   }}
                   src={getPowerUpAssetPath(item.id)}
                 />
-                <span>{item.name.slice(0, 2).toUpperCase()}</span>
+                <span>{itemName.slice(0, 2).toUpperCase()}</span>
               </div>
               <div className="shop-card-badges">
-                <span className="badge">{item.rarity}</span>
-                <span className="badge premium-badge">Owned: {quantity}</span>
+                <span className="badge">{t(`rarity.${item.rarity}`)}</span>
+                <span className="badge premium-badge">{t('common.owned', { quantity })}</span>
               </div>
-              <h2>{item.name}</h2>
-              <p>{item.description}</p>
+              <h2>{itemName}</h2>
+              <p>{t(`shopItems.${item.id}.description`)}</p>
               <button
                 className="primary-button"
                 onClick={() => handleShopResult(onPurchaseItem(item.id))}
                 type="button"
               >
-                Buy for {formatNumber(item.price)} coins
+                {t('common.buyFor', { price: formatNumber(item.price) })}
               </button>
             </article>
           );

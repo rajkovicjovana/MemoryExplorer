@@ -26,8 +26,10 @@ import {
   unlockGameplayAchievements,
 } from './utils/progression';
 import { playSound, unlockAudio } from './utils/audio';
+import { useLanguage } from './i18n/useLanguage';
 
 function App() {
+  const { t } = useLanguage();
   const [profile, setProfile] = useState(loadProfile);
   const [activeScreen, setActiveScreen] = useState<ScreenId>('main-menu');
   const unlockedWorlds = useMemo(
@@ -48,22 +50,29 @@ function App() {
 
   useEffect(() => {
     const handleFirstInteraction = () => unlockAudio();
-    const handleButtonClick = (event: MouseEvent) => {
+    const handleButtonClick = (event: PointerEvent | KeyboardEvent) => {
       const button = (event.target as HTMLElement).closest('button');
 
       if (button) {
         playSound('button-click', 0.46);
       }
     };
+    const handleKeyboardButtonClick = (event: KeyboardEvent) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        handleButtonClick(event);
+      }
+    };
 
     window.addEventListener('pointerdown', handleFirstInteraction, { capture: true });
     window.addEventListener('keydown', handleFirstInteraction, { capture: true });
-    document.addEventListener('click', handleButtonClick, { capture: true });
+    document.addEventListener('pointerup', handleButtonClick, { capture: true });
+    document.addEventListener('keydown', handleKeyboardButtonClick, { capture: true });
 
     return () => {
       window.removeEventListener('pointerdown', handleFirstInteraction, { capture: true });
       window.removeEventListener('keydown', handleFirstInteraction, { capture: true });
-      document.removeEventListener('click', handleButtonClick, { capture: true });
+      document.removeEventListener('pointerup', handleButtonClick, { capture: true });
+      document.removeEventListener('keydown', handleKeyboardButtonClick, { capture: true });
     };
   }, []);
 
@@ -142,8 +151,23 @@ function App() {
     return result;
   }, []);
 
+  const handleRenamePlayer = useCallback((name: string) => {
+    const trimmedName = name.trim().replace(/\s+/g, ' ').slice(0, 24);
+
+    if (trimmedName.length < 2) {
+      return;
+    }
+
+    setProfile((currentProfile) => {
+      const nextProfile = { ...currentProfile, name: trimmedName };
+
+      profileRef.current = nextProfile;
+      return nextProfile;
+    });
+  }, []);
+
   const handleResetProgress = useCallback(() => {
-    if (!window.confirm('Reset all local Memory Explorer progress?')) {
+    if (!window.confirm(t('profile.resetConfirm'))) {
       return;
     }
 
@@ -154,7 +178,7 @@ function App() {
     profileRef.current = defaultProfile;
     setSelectedWorld(defaultWorlds[0]);
     setActiveScreen('profile');
-  }, []);
+  }, [t]);
 
   const handleSelectWorld = useCallback((world: World) => {
     if (!world.unlocked) {
@@ -177,6 +201,14 @@ function App() {
     setActiveScreen(screen);
   }, [activeGameExitHandler, activeScreen]);
 
+  const handleStartMode = useCallback((mode?: GameMode) => {
+    if (mode) {
+      setSelectedMode(mode);
+    }
+
+    setActiveScreen('gameplay');
+  }, []);
+
   const activeContent = useMemo(() => {
     switch (activeScreen) {
       case 'world-select':
@@ -192,7 +224,7 @@ function App() {
         return (
           <ModeSelect
             duelPlayers={duelPlayers}
-            onPlay={() => setActiveScreen('gameplay')}
+            onPlay={handleStartMode}
             onSetDuelPlayers={setDuelPlayers}
             onSelectMode={setSelectedMode}
             selectedMode={selectedMode}
@@ -217,7 +249,14 @@ function App() {
           />
         );
       case 'profile':
-        return <ProfileStats onNavigate={setActiveScreen} onResetProgress={handleResetProgress} profile={profile} />;
+        return (
+          <ProfileStats
+            onNavigate={setActiveScreen}
+            onRenamePlayer={handleRenamePlayer}
+            onResetProgress={handleResetProgress}
+            profile={profile}
+          />
+        );
       case 'achievements':
         return <Achievements profile={profile} />;
       case 'shop':
@@ -239,9 +278,11 @@ function App() {
     handleDailyChallengeCheck,
     handleLoss,
     handlePurchaseShopItem,
+    handleRenamePlayer,
     handleRegisterExitHandler,
     handleResetProgress,
     handleSelectWorld,
+    handleStartMode,
     handleWorldModeComplete,
     handleUsePowerUp,
     handleVictory,

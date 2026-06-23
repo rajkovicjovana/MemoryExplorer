@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useLanguage } from '../i18n/useLanguage';
 
 type ScreenHeaderProps = {
   title: string;
@@ -7,10 +8,12 @@ type ScreenHeaderProps = {
 };
 
 export function ScreenHeader({ title, subtitle, action }: ScreenHeaderProps) {
+  const { t } = useLanguage();
+
   return (
     <div className="screen-header">
       <div>
-        <span className="eyebrow">Memory Explorer</span>
+        <span className="eyebrow">{t('app.eyebrow')}</span>
         <h1>{title}</h1>
         <p>{subtitle}</p>
       </div>

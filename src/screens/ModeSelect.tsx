@@ -2,6 +2,7 @@ import { Bot, Layers, Leaf, Mountain, Timer, Users } from 'lucide-react';
 import type { GameMode, World } from '../types/game';
 import { gameModes } from '../data/gameData';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { useLanguage } from '../i18n/useLanguage';
 
 type ModeSelectProps = {
   duelPlayers: { player1: string; player2: string };
@@ -9,7 +10,7 @@ type ModeSelectProps = {
   selectedWorld: World;
   onSetDuelPlayers: (players: { player1: string; player2: string }) => void;
   onSelectMode: (mode: GameMode) => void;
-  onPlay: () => void;
+  onPlay: (mode?: GameMode) => void;
 };
 
 const modePresentation: Record<string, { difficulty: string; Icon: typeof Layers; instructions: string; tagline: string }> = {
@@ -22,11 +23,13 @@ const modePresentation: Record<string, { difficulty: string; Icon: typeof Layers
 };
 
 export function ModeSelect({ duelPlayers, selectedMode, selectedWorld, onSetDuelPlayers, onSelectMode, onPlay }: ModeSelectProps) {
+  const { t } = useLanguage();
+
   return (
     <section className="screen">
       <ScreenHeader
-        title="Select Mode"
-        subtitle={`Choose how you want to explore ${selectedWorld.name}.`}
+        title={t('modesScreen.title')}
+        subtitle={t('modesScreen.subtitle', { world: t(`worlds.${selectedWorld.id}.name`) })}
       />
       <div className="mode-grid">
         {gameModes.map((mode) => {
@@ -37,21 +40,28 @@ export function ModeSelect({ duelPlayers, selectedMode, selectedWorld, onSetDuel
             tagline: mode.name,
           };
           const ModeIcon = presentation.Icon;
+          const presentationKey = `modesScreen.presentation.${mode.id}`;
 
           return (
             <button
               className={mode.id === selectedMode.id ? 'mode-card selected' : 'mode-card'}
               key={mode.id}
-              onClick={() => onSelectMode(mode)}
+              onClick={() => {
+                onSelectMode(mode);
+
+                if (mode.id !== 'duel') {
+                  onPlay(mode);
+                }
+              }}
               type="button"
             >
               <span className="mode-icon" aria-hidden="true">
                 <ModeIcon size={34} strokeWidth={2.5} />
               </span>
-              <span className="badge">{presentation.difficulty}</span>
-              <h2>{mode.name}</h2>
-              <p>{presentation.tagline}</p>
-              <small>{presentation.instructions}</small>
+              <span className="badge">{t(`${presentationKey}.difficulty`) || presentation.difficulty}</span>
+              <h2>{t(`modes.${mode.id}.name`) || mode.name}</h2>
+              <p>{t(`${presentationKey}.tagline`) || presentation.tagline}</p>
+              <small>{t(`${presentationKey}.instructions`) || presentation.instructions}</small>
             </button>
           );
         })}
@@ -59,32 +69,34 @@ export function ModeSelect({ duelPlayers, selectedMode, selectedWorld, onSetDuel
       {selectedMode.id === 'duel' ? (
         <div className="duel-name-panel">
           <div>
-            <label htmlFor="player-one-name">Player 1 name</label>
+            <label htmlFor="player-one-name">{t('modesScreen.playerOneName')}</label>
             <input
               id="player-one-name"
               maxLength={18}
               onChange={(event) => onSetDuelPlayers({ ...duelPlayers, player1: event.target.value })}
-              placeholder="Player 1"
+              placeholder={t('modesScreen.playerOne')}
               type="text"
               value={duelPlayers.player1}
             />
           </div>
           <div>
-            <label htmlFor="player-two-name">Player 2 name</label>
+            <label htmlFor="player-two-name">{t('modesScreen.playerTwoName')}</label>
             <input
               id="player-two-name"
               maxLength={18}
               onChange={(event) => onSetDuelPlayers({ ...duelPlayers, player2: event.target.value })}
-              placeholder="Player 2"
+              placeholder={t('modesScreen.playerTwo')}
               type="text"
               value={duelPlayers.player2}
             />
           </div>
         </div>
       ) : null}
-      <button className="primary-button wide" onClick={onPlay} type="button">
-        Start Game
-      </button>
+      {selectedMode.id === 'duel' ? (
+        <button className="primary-button wide" onClick={() => onPlay(selectedMode)} type="button">
+          {t('modesScreen.startGame')}
+        </button>
+      ) : null}
     </section>
   );
 }

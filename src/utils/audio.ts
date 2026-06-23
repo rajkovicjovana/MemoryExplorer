@@ -192,7 +192,7 @@ export function playSound(soundId: SoundId, volume = 0.72): void {
   }
 
   const now = Date.now();
-  const minimumGapMs = soundId === 'button-click' ? 80 : 0;
+  const minimumGapMs = soundId === 'button-click' ? 25 : 0;
 
   if (minimumGapMs > 0 && now - (lastPlayedAt.get(soundId) ?? 0) < minimumGapMs) {
     return;
@@ -206,7 +206,7 @@ export function playSound(soundId: SoundId, volume = 0.72): void {
 
   try {
     lastPlayedAt.set(soundId, now);
-    const audio = soundId === 'button-click' ? sourceAudio : sourceAudio.cloneNode(true) as HTMLAudioElement;
+    const audio = sourceAudio.cloneNode(true) as HTMLAudioElement;
     audio.pause();
     audio.currentTime = 0;
     audio.volume = Math.max(0, Math.min(1, volume));

@@ -1,4 +1,5 @@
 import type { ScreenId } from '../types/game';
+import { useLanguage } from '../i18n/useLanguage';
 
 type NavItem = {
   id: ScreenId;
@@ -20,8 +21,10 @@ type BottomNavProps = {
 };
 
 export function BottomNav({ activeScreen, onNavigate }: BottomNavProps) {
+  const { t } = useLanguage();
+
   return (
-    <nav className="bottom-nav" aria-label="Primary">
+    <nav className="bottom-nav" aria-label={t('nav.primary')}>
       {navItems.map((item) => (
         <button
           className={item.id === activeScreen ? 'nav-item active' : 'nav-item'}
@@ -30,7 +33,7 @@ export function BottomNav({ activeScreen, onNavigate }: BottomNavProps) {
           type="button"
         >
           <span aria-hidden="true">{item.icon}</span>
-          {item.label}
+          {t(`nav.${item.id === 'main-menu' ? 'home' : item.id === 'world-select' ? 'worlds' : item.id}`) || item.label}
         </button>
       ))}
     </nav>

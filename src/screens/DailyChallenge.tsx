@@ -2,12 +2,14 @@ import type { PlayerProfile } from '../types/game';
 import { formatNumber } from '../utils/format';
 import { getDailyChestProgress, getDailyMissions, getWeeklyChallenge } from '../utils/progression';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { useLanguage } from '../i18n/useLanguage';
 
 type DailyChallengeProps = {
   profile: PlayerProfile;
 };
 
 export function DailyChallenge({ profile }: DailyChallengeProps) {
+  const { t } = useLanguage();
   const missions = getDailyMissions();
   const weeklyChallenge = getWeeklyChallenge();
   const dailyProgress = profile.dailyMissions;
@@ -25,11 +27,11 @@ export function DailyChallenge({ profile }: DailyChallengeProps) {
 
   return (
     <section className="screen daily-screen">
-      <ScreenHeader title="Daily Missions" subtitle="Complete daily routes and build toward a harder weekly goal." />
+      <ScreenHeader title={t('daily.title')} subtitle={t('daily.subtitle')} />
 
       <div className="daily-section-header">
-        <span className="eyebrow">Today's Missions</span>
-        <strong>Daily Chest {completedMissionCount}/3</strong>
+        <span className="eyebrow">{t('daily.todaysMissions')}</span>
+        <strong>{t('daily.dailyChestProgress', { count: completedMissionCount })}</strong>
       </div>
 
       <div className="daily-mission-grid">
@@ -40,13 +42,13 @@ export function DailyChallenge({ profile }: DailyChallengeProps) {
           return (
             <article className={isClaimed ? 'daily-card mission-card completed' : 'daily-card mission-card'} key={mission.id}>
               <span className={isClaimed ? 'badge premium-badge' : 'badge timer-badge'}>
-                {isClaimed ? 'Claimed' : 'Open'}
+                {isClaimed ? t('common.claimed') : t('common.open')}
               </span>
-              <h2>{mission.title}</h2>
-              <p>{mission.description}</p>
+              <h2>{t(`dailyMissions.${mission.type}.title`)}</h2>
+              <p>{t(`dailyMissions.${mission.type}.description`)}</p>
               <div className="reward-row">
-                <span>{formatNumber(mission.rewardCoins)} coins</span>
-                <span>{formatNumber(mission.rewardXp)} XP</span>
+                <span>{formatNumber(mission.rewardCoins)} {t('common.coins')}</span>
+                <span>{formatNumber(mission.rewardXp)} {t('common.xp')}</span>
               </div>
             </article>
           );
@@ -54,33 +56,33 @@ export function DailyChallenge({ profile }: DailyChallengeProps) {
       </div>
 
       <article className={completedMissionCount === 3 ? 'daily-card daily-chest-card completed' : 'daily-card daily-chest-card'}>
-        <span className="badge premium-badge">Daily Chest</span>
-        <h2>{dailyProgress?.chestRewarded ? 'Chest Claimed' : 'Complete All Missions'}</h2>
-        <p>Finish all 3 daily missions to unlock a one-time chest bonus.</p>
+        <span className="badge premium-badge">{t('daily.dailyChest')}</span>
+        <h2>{dailyProgress?.chestRewarded ? t('daily.chestClaimed') : t('daily.completeAllMissions')}</h2>
+        <p>{t('daily.chestDescription')}</p>
         <div className="reward-row">
-          <span>{completedMissionCount}/3 done</span>
-          <span>50 coins</span>
-          <span>150 XP</span>
+          <span>{completedMissionCount}/3 {t('common.done')}</span>
+          <span>50 {t('common.coins')}</span>
+          <span>150 {t('common.xp')}</span>
         </div>
       </article>
 
       <div className="daily-section-header weekly-header">
-        <span className="eyebrow">Weekly Challenge</span>
+        <span className="eyebrow">{t('daily.weeklyChallenge')}</span>
         <strong>{weeklyChallenge.weekKey}</strong>
       </div>
 
       <article className={weeklyCompleted ? 'daily-card weekly-card completed' : 'daily-card weekly-card'}>
         <span className={weeklyCompleted ? 'badge premium-badge' : 'badge timer-badge'}>
-          {weeklyCompleted ? 'Claimed' : 'In Progress'}
+          {weeklyCompleted ? t('common.claimed') : t('common.inProgress')}
         </span>
-        <h2>{weeklyChallenge.title}</h2>
-        <p>{weeklyChallenge.description}</p>
+        <h2>{t(`weeklyChallenges.${weeklyChallenge.type}.title`)}</h2>
+        <p>{t(`weeklyChallenges.${weeklyChallenge.type}.description`)}</p>
         <div className="reward-row">
           <span>
             {formatNumber(weeklyProgressValue)}/{formatNumber(weeklyChallenge.target)}
           </span>
-          <span>{formatNumber(weeklyChallenge.rewardCoins)} coins</span>
-          <span>{formatNumber(weeklyChallenge.rewardXp)} XP</span>
+          <span>{formatNumber(weeklyChallenge.rewardCoins)} {t('common.coins')}</span>
+          <span>{formatNumber(weeklyChallenge.rewardXp)} {t('common.xp')}</span>
         </div>
       </article>
     </section>
