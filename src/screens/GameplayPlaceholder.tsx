@@ -10,6 +10,7 @@ import type {
   ShopActionResult,
   VictoryProgress,
 } from '../utils/progression';
+import { playSound } from '../utils/audio';
 import { formatDuration } from '../utils/progression';
 
 type MemoryCard = {
@@ -68,6 +69,9 @@ type VictoryRewards = {
   earnedCoins: number;
   earnedXp: number;
   leveledUp: boolean;
+  previousLevel?: number;
+  nextLevel?: number;
+  unlockedWorlds: World[];
 };
 
 type AiMemoryEntry = Pick<MemoryCard, 'pairId' | 'symbol' | 'label'>;
@@ -76,6 +80,39 @@ const matchResolveDelayMs = 260;
 const mismatchDelayMs = 780;
 const souvenirScoreBonus = 250;
 const souvenirCoinBonus = 120;
+
+type RewardToast = {
+  id: string;
+  title: string;
+  detail: string;
+  reward: string;
+  kind: 'badge' | 'daily' | 'chest' | 'weekly';
+};
+
+const rewardToastIcons: Record<RewardToast['kind'], string> = {
+  badge: 'T',
+  daily: 'D',
+  chest: 'C',
+  weekly: 'W',
+};
+
+function getLiveComboAchievementIds(comboCount: number): string[] {
+  const achievementIds: string[] = [];
+
+  if (comboCount >= 5) {
+    achievementIds.push('combo-legend-bronze');
+  }
+
+  if (comboCount >= 10) {
+    achievementIds.push('combo-legend-silver');
+  }
+
+  if (comboCount >= 15) {
+    achievementIds.push('combo-legend-gold');
+  }
+
+  return achievementIds;
+}
 
 const powerUps: PowerUp[] = [
   {
@@ -253,10 +290,6 @@ function getPowerUpAssetPath(powerUpId: PowerUpId): string {
 }
 
 function getModeLabel(mode: GameMode): string {
-  if (mode.id === 'challenge') {
-    return 'Challenge Route';
-  }
-
   if (mode.id === 'ai') {
     return 'Player vs AI';
   }
@@ -282,10 +315,40 @@ function getGameplaySubtitle(mode: GameMode, world: World): string {
   return routeLabel;
 }
 
-function calculateRewards(score: number, bestCombo: number, hasSouvenirBonus: boolean): Omit<VictoryRewards, 'leveledUp'> {
+const worldBaseXp: Record<string, Record<string, number>> = {
+  europe: { classic: 80, 'time-attack': 120, survival: 130, ai: 150 },
+  tropics: { classic: 120, 'time-attack': 170, survival: 180, ai: 210 },
+  mountains: { classic: 160, 'time-attack': 230, survival: 250, ai: 290 },
+  city: { classic: 190, 'time-attack': 280, survival: 300, ai: 350 },
+  space: { classic: 240, 'time-attack': 360, survival: 390, ai: 450 },
+};
+
+function calculateRewards(
+  score: number,
+  bestCombo: number,
+  hasSouvenirBonus: boolean,
+  mode: GameMode,
+  world: World,
+  elapsedSeconds: number,
+  mismatchCount: number,
+): Omit<VictoryRewards, 'leveledUp'> {
+  if (mode.id === 'zen' || mode.id === 'duel') {
+    return {
+      earnedXp: 0,
+      earnedCoins: 0,
+      unlockedWorlds: [],
+    };
+  }
+
+  const baseXp = worldBaseXp[world.id]?.[mode.id] ?? 80;
+  const comboBonus = Math.min(60, Math.max(0, bestCombo - 2) * 8);
+  const speedBonus = elapsedSeconds > 0 && elapsedSeconds <= 90 ? Math.max(0, Math.round((90 - elapsedSeconds) / 3)) : 0;
+  const perfectBonus = mismatchCount === 0 ? 35 : 0;
+
   return {
-    earnedXp: Math.max(40, Math.round(score / 8) + bestCombo * 12),
-    earnedCoins: Math.max(20, Math.round(score / 18) + bestCombo * 4) + (hasSouvenirBonus ? souvenirCoinBonus : 0),
+    earnedXp: baseXp + comboBonus + speedBonus + perfectBonus,
+    earnedCoins: Math.max(12, Math.round(score / 45) + bestCombo * 2) + (hasSouvenirBonus ? souvenirCoinBonus : 0),
+    unlockedWorlds: [],
   };
 }
 
@@ -360,7 +423,9 @@ function GameplaySession({
   const [isResolving, setIsResolving] = useState(false);
   const [status, setStatus] = useState<GameStatus>('playing');
   const [victoryRewards, setVictoryRewards] = useState<VictoryRewards | null>(null);
-  const [newlyUnlockedAchievements, setNewlyUnlockedAchievements] = useState<Achievement[]>([]);
+  const [celebrationStep, setCelebrationStep] = useState<'victory' | 'level' | 'world' | 'done'>('victory');
+  const [, setNewlyUnlockedAchievements] = useState<Achievement[]>([]);
+  const [rewardToasts, setRewardToasts] = useState<RewardToast[]>([]);
   const [souvenirBonusActive, setSouvenirBonusActive] = useState(false);
   const [powerUpsUsedCount, setPowerUpsUsedCount] = useState(0);
   const [temporaryRevealedIds, setTemporaryRevealedIds] = useState<string[]>([]);
@@ -368,9 +433,11 @@ function GameplaySession({
   const [powerUpMessage, setPowerUpMessage] = useState('');
   const [activePowerUpInfo, setActivePowerUpInfo] = useState<PowerUpId | null>(null);
   const [showGiveUpConfirm, setShowGiveUpConfirm] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [pendingExitScreen, setPendingExitScreen] = useState<ScreenId | null>(null);
   const [currentTurn, setCurrentTurn] = useState<PlayerTurn>('player');
   const [aiDifficulty, setAiDifficulty] = useState<AiDifficulty>('medium');
+  const [aiDifficultyLocked, setAiDifficultyLocked] = useState(false);
   const [aiMemory, setAiMemory] = useState<Record<string, AiMemoryEntry>>({});
   const [playerPairs, setPlayerPairs] = useState(0);
   const [aiPairs, setAiPairs] = useState(0);
@@ -381,13 +448,15 @@ function GameplaySession({
   const [duelPlayer2Pairs, setDuelPlayer2Pairs] = useState(0);
   const [duelOutcome, setDuelOutcome] = useState<DuelOutcome | null>(null);
   const [duelMessage, setDuelMessage] = useState(`${duelPlayers.player1.trim() || 'Player 1'} starts.`);
-  const [dailyChallengeReward, setDailyChallengeReward] = useState<DailyChallengeUpdate | null>(null);
+  const [, setDailyChallengeReward] = useState<DailyChallengeUpdate | null>(null);
   const aiTurnInProgressRef = useRef(false);
   const aiTimersRef = useRef<number[]>([]);
   const gameplayTimersRef = useRef<number[]>([]);
   const selectedCardsRef = useRef<MemoryCard[]>([]);
   const isResolvingRef = useRef(false);
   const powerUpPanelRef = useRef<HTMLDivElement | null>(null);
+  const lastStatusSoundRef = useRef<GameStatus>('playing');
+  const lastCelebrationSoundRef = useRef<typeof celebrationStep>('victory');
 
   const pairCount = cards.length / 2;
   const isAiMode = mode.id === 'ai';
@@ -397,11 +466,16 @@ function GameplaySession({
   const isZen = mode.id === 'zen';
   const remainingMoves = Math.max(0, boardConfig.survivalMaxMoves - moves);
   const hasSouvenirBonus = souvenirBonusActive;
-  const displayedRewards = victoryRewards ?? { ...calculateRewards(score, bestCombo, hasSouvenirBonus), leveledUp: false };
+  const displayedRewards = victoryRewards ?? {
+    ...calculateRewards(score, bestCombo, hasSouvenirBonus, mode, world, elapsedSeconds, mismatchCount),
+    leveledUp: false,
+  };
   const powerUpsEnabled = !isZen && !isDuelMode;
   const isPlayerTurn = !isAiMode || currentTurn === 'player';
+  const canChangeAiDifficulty = isAiMode && status === 'playing' && !aiDifficultyLocked && !isResolving && !aiThinking;
   const duelPlayer1Name = duelPlayers.player1.trim() || 'Player 1';
   const duelPlayer2Name = duelPlayers.player2.trim() || 'Player 2';
+  const showRewardToasts = rewardToasts.length > 0 && !(status === 'won' && (celebrationStep === 'level' || celebrationStep === 'world'));
   const currentDuelPlayerName = duelTurn === 'player1' ? duelPlayer1Name : duelPlayer2Name;
 
   const cardFaceUrls = useMemo(
@@ -494,6 +568,9 @@ function GameplaySession({
     }
 
     setComboBurst(nextCombo);
+    if ([3, 5, 7, 10].includes(nextCombo)) {
+      playSound('combo', 0.7);
+    }
     scheduleGameplayTimer(() => setComboBurst(null), 1000);
   }, [scheduleGameplayTimer]);
 
@@ -548,6 +625,18 @@ function GameplaySession({
       return;
     }
 
+    // Future sound hook: trigger badge reward sound here.
+    playSound('badge-unlocked', 0.78);
+    setRewardToasts((currentToasts) => [
+      ...currentToasts,
+      ...nextAchievements.map((achievement) => ({
+        detail: achievement.title,
+        id: `badge-${achievement.id}-${Date.now()}`,
+        kind: 'badge' as const,
+        reward: `+${achievement.reward} XP`,
+        title: 'Badge Unlocked',
+      })),
+    ]);
     setNewlyUnlockedAchievements((currentAchievements) => {
       const currentIds = new Set(currentAchievements.map((achievement) => achievement.id));
       const uniqueNextAchievements = nextAchievements.filter((achievement) => !currentIds.has(achievement.id));
@@ -556,6 +645,7 @@ function GameplaySession({
     });
     window.setTimeout(() => {
       setNewlyUnlockedAchievements([]);
+      setRewardToasts([]);
     }, 3200);
   }, []);
 
@@ -564,13 +654,89 @@ function GameplaySession({
     window.setTimeout(() => setPowerUpMessage(''), 2200);
   };
 
-  const checkDailyChallenge = useCallback((result: DailyChallengeGameResult) => {
+  const checkDailyChallenge = useCallback((result: DailyChallengeGameResult, options?: { showInResult?: boolean }) => {
     const update = onDailyChallengeCheck(result);
 
     if (update.dailyMissionsCompleted.length > 0 || update.dailyChestUnlocked || update.weeklyChallengeCompleted) {
-      setDailyChallengeReward(update);
+      if (options?.showInResult !== false) {
+        setDailyChallengeReward(update);
+      }
+
+      if (update.leveledUp || update.unlockedWorlds.length > 0) {
+        setVictoryRewards((currentRewards) => currentRewards
+          ? {
+              ...currentRewards,
+              leveledUp: currentRewards.leveledUp || update.leveledUp,
+              nextLevel: Math.max(currentRewards.nextLevel ?? update.nextLevel, update.nextLevel),
+              previousLevel: currentRewards.previousLevel ?? update.previousLevel,
+              unlockedWorlds: [
+                ...currentRewards.unlockedWorlds,
+                ...update.unlockedWorlds.filter(
+                  (nextWorld) => !currentRewards.unlockedWorlds.some((currentWorld) => currentWorld.id === nextWorld.id),
+                ),
+              ],
+            }
+          : currentRewards);
+      }
+      if (update.weeklyChallengeCompleted) {
+        playSound('badge-unlocked', 0.74);
+      } else {
+        playSound('daily-complete', 0.72);
+      }
+      setRewardToasts((currentToasts) => [
+        ...currentToasts,
+        ...update.dailyMissionsCompleted.map((mission) => ({
+          detail: mission.title,
+          id: `daily-${mission.id}-${Date.now()}`,
+          kind: 'daily' as const,
+          reward: `+${mission.rewardXp} XP +${mission.rewardCoins} coins`,
+          title: 'Daily Mission Complete',
+        })),
+        ...(update.dailyChestUnlocked
+          ? [{
+              detail: 'Daily chest opened',
+              id: `daily-chest-${Date.now()}`,
+              kind: 'chest' as const,
+              reward: `+${update.rewardXp} XP +${update.rewardCoins} coins`,
+              title: 'Daily Chest Unlocked',
+            }]
+          : []),
+        ...(update.weeklyChallengeCompleted
+          ? [{
+              detail: 'Trail Master Week',
+              id: `weekly-${Date.now()}`,
+              kind: 'weekly' as const,
+              reward: `+${update.rewardXp} XP +${update.rewardCoins} coins`,
+              title: 'Weekly Challenge Complete',
+            }]
+          : []),
+      ]);
+      window.setTimeout(() => setRewardToasts([]), 3600);
     }
-  }, [onDailyChallengeCheck]);
+
+    if (update.newlyUnlockedAchievements.length > 0) {
+      showAchievementUnlocks(update.newlyUnlockedAchievements);
+    }
+  }, [onDailyChallengeCheck, showAchievementUnlocks]);
+
+  const checkLiveRewards = useCallback((nextBestCombo: number, nextPowerUpsUsed: number) => {
+    if (isDuelMode || isZen) {
+      return;
+    }
+
+    checkDailyChallenge({
+      aiDifficulty: isAiMode ? aiDifficulty : undefined,
+      aiOutcome: isAiMode ? aiOutcome ?? undefined : undefined,
+      bestCombo: nextBestCombo,
+      elapsedSeconds,
+      live: true,
+      mismatchCount,
+      modeId: mode.id,
+      powerUpsUsed: nextPowerUpsUsed,
+      score: 0,
+      won: false,
+    }, { showInResult: false });
+  }, [aiDifficulty, aiOutcome, checkDailyChallenge, elapsedSeconds, isAiMode, isDuelMode, isZen, mismatchCount, mode.id]);
 
   const completeGame = useCallback((won: boolean, overrides?: Partial<DailyChallengeGameResult>) => {
     checkDailyChallenge({
@@ -606,7 +772,9 @@ function GameplaySession({
       return false;
     }
 
-    setPowerUpsUsedCount((currentCount) => currentCount + 1);
+    const nextPowerUpsUsed = powerUpsUsedCount + 1;
+    setPowerUpsUsedCount(nextPowerUpsUsed);
+    checkLiveRewards(bestCombo, nextPowerUpsUsed);
     return true;
   };
 
@@ -636,6 +804,7 @@ function GameplaySession({
 
     setDuelOutcome(outcome);
     onWorldModeComplete(world.id, mode.id);
+    setCelebrationStep('victory');
     setStatus('won');
   }, [mode.id, onWorldModeComplete, world.id]);
 
@@ -659,12 +828,13 @@ function GameplaySession({
         mismatchCount: finalMismatchCount,
         score: finalScore,
       });
+      setCelebrationStep('done');
       setStatus('lost');
       return;
     }
 
     const finalVictoryScore = finalScore + (hasSouvenirBonus ? souvenirScoreBonus : 0);
-    const rewards = calculateRewards(finalVictoryScore, finalBestCombo, hasSouvenirBonus);
+    const rewards = calculateRewards(finalVictoryScore, finalBestCombo, hasSouvenirBonus, mode, world, elapsedSeconds, finalMismatchCount);
     const progressUpdate = onVictory({
       ...rewards,
       bestCombo: finalBestCombo,
@@ -675,7 +845,13 @@ function GameplaySession({
     });
 
     setScore(finalVictoryScore);
-    setVictoryRewards({ ...rewards, leveledUp: progressUpdate.leveledUp });
+    setVictoryRewards({
+      ...rewards,
+      leveledUp: progressUpdate.leveledUp,
+      nextLevel: progressUpdate.nextLevel,
+      previousLevel: progressUpdate.previousLevel,
+      unlockedWorlds: progressUpdate.unlockedWorlds,
+    });
     showAchievementUnlocks(progressUpdate.newlyUnlockedAchievements);
     completeGame(true, {
       aiOutcome: outcome,
@@ -683,12 +859,28 @@ function GameplaySession({
       mismatchCount: finalMismatchCount,
       score: finalVictoryScore,
     });
+    setCelebrationStep('victory');
     setStatus('won');
-  }, [completeGame, elapsedSeconds, hasSouvenirBonus, mode.id, onLoss, onVictory, showAchievementUnlocks, world.id]);
+  }, [completeGame, elapsedSeconds, hasSouvenirBonus, mode, onLoss, onVictory, showAchievementUnlocks, world]);
 
   const finishSoloVictory = useCallback((finalScore: number, finalBestCombo: number, finalMismatchCount: number) => {
     const finalVictoryScore = finalScore + (hasSouvenirBonus ? souvenirScoreBonus : 0);
-    const rewards = calculateRewards(finalVictoryScore, finalBestCombo, hasSouvenirBonus);
+
+    if (isZen) {
+      setScore(finalScore);
+      setVictoryRewards({
+        earnedCoins: 0,
+        earnedXp: 0,
+        leveledUp: false,
+        unlockedWorlds: [],
+      });
+      onWorldModeComplete(world.id, mode.id);
+      setCelebrationStep('victory');
+      setStatus('won');
+      return;
+    }
+
+    const rewards = calculateRewards(finalVictoryScore, finalBestCombo, hasSouvenirBonus, mode, world, elapsedSeconds, finalMismatchCount);
     const progressUpdate = onVictory({
       ...rewards,
       bestCombo: finalBestCombo,
@@ -699,15 +891,22 @@ function GameplaySession({
     });
 
     setScore(finalVictoryScore);
-    setVictoryRewards({ ...rewards, leveledUp: progressUpdate.leveledUp });
+    setVictoryRewards({
+      ...rewards,
+      leveledUp: progressUpdate.leveledUp,
+      nextLevel: progressUpdate.nextLevel,
+      previousLevel: progressUpdate.previousLevel,
+      unlockedWorlds: progressUpdate.unlockedWorlds,
+    });
     showAchievementUnlocks(progressUpdate.newlyUnlockedAchievements);
     completeGame(true, {
       bestCombo: finalBestCombo,
       mismatchCount: finalMismatchCount,
       score: finalVictoryScore,
     });
+    setCelebrationStep('victory');
     setStatus('won');
-  }, [completeGame, elapsedSeconds, hasSouvenirBonus, mode.id, onVictory, showAchievementUnlocks, world.id]);
+  }, [completeGame, elapsedSeconds, hasSouvenirBonus, isZen, mode, onVictory, onWorldModeComplete, showAchievementUnlocks, world]);
 
   const revealTemporarily = (cardIds: string[], durationMs: number) => {
     setTemporaryRevealedIds(cardIds);
@@ -730,6 +929,7 @@ function GameplaySession({
     if (
       !powerUpsEnabled ||
       status !== 'playing' ||
+      isPaused ||
       !isPlayerTurn ||
       isResolving ||
       goldenPassportActive ||
@@ -862,7 +1062,7 @@ function GameplaySession({
   };
 
   useEffect(() => {
-    if (status !== 'playing') {
+    if (status !== 'playing' || isPaused) {
       return;
     }
 
@@ -871,10 +1071,10 @@ function GameplaySession({
     }, 1000);
 
     return () => window.clearInterval(timerId);
-  }, [status]);
+  }, [isPaused, status]);
 
   useEffect(() => {
-    if (!isTimeAttack || status !== 'playing') {
+    if (!isTimeAttack || status !== 'playing' || isPaused) {
       return;
     }
 
@@ -882,6 +1082,7 @@ function GameplaySession({
       setTimeLeft((currentTime) => {
         if (currentTime <= 1) {
           completeGame(false);
+          setCelebrationStep('done');
           setStatus('lost');
           return 0;
         }
@@ -891,7 +1092,7 @@ function GameplaySession({
     }, 1000);
 
     return () => window.clearInterval(timerId);
-  }, [completeGame, isTimeAttack, status]);
+  }, [completeGame, isPaused, isTimeAttack, status]);
 
   const handleCardClick = (card: MemoryCard) => {
     if (card.matched) {
@@ -900,6 +1101,7 @@ function GameplaySession({
 
     if (
       status !== 'playing' ||
+      isPaused ||
       isResolvingRef.current ||
       aiThinking ||
       !isPlayerTurn ||
@@ -910,6 +1112,9 @@ function GameplaySession({
     }
 
     rememberSeenCards([card]);
+    if (isAiMode) {
+      setAiDifficultyLocked(true);
+    }
 
     if (goldenPassportActive) {
       const matchingCard = cards.find((item) => !item.matched && item.id !== card.id && item.pairId === card.pairId);
@@ -953,19 +1158,17 @@ function GameplaySession({
         setSelectedCards([]);
         isResolvingRef.current = false;
         setIsResolving(false);
+        playSound('card-match', 0.72);
         showPowerUpMessage('Golden Passport completed a pair.');
         if (isDuelMode) {
           setDuelMessage(`${currentDuelPlayerName} found a pair and goes again.`);
         }
 
-        const gameplayAchievementIds: string[] = [];
-
-        if (nextCombo >= 10) {
-          gameplayAchievementIds.push('combo-master');
-        }
+        const gameplayAchievementIds = getLiveComboAchievementIds(nextCombo);
 
         if (!isDuelMode) {
           showAchievementUnlocks(onAchievementUnlock(gameplayAchievementIds).newlyUnlockedAchievements);
+          checkLiveRewards(finalBestCombo, powerUpsUsedCount);
         }
 
         if (nextMatches === pairCount) {
@@ -981,6 +1184,7 @@ function GameplaySession({
             bestCombo: finalBestCombo,
             score: finalScore,
           });
+          setCelebrationStep('done');
           setStatus('lost');
         }
       }, matchResolveDelayMs);
@@ -1040,18 +1244,16 @@ function GameplaySession({
         setSelectedCards([]);
         isResolvingRef.current = false;
         setIsResolving(false);
+        playSound('card-match', 0.72);
         if (isDuelMode) {
           setDuelMessage(`${currentDuelPlayerName} found a pair and goes again.`);
         }
 
-        const gameplayAchievementIds: string[] = [];
-
-        if (nextCombo >= 10) {
-          gameplayAchievementIds.push('combo-master');
-        }
+        const gameplayAchievementIds = getLiveComboAchievementIds(nextCombo);
 
         if (!isDuelMode) {
           showAchievementUnlocks(onAchievementUnlock(gameplayAchievementIds).newlyUnlockedAchievements);
+          checkLiveRewards(finalBestCombo, powerUpsUsedCount);
         }
 
         if (nextMatches === pairCount) {
@@ -1067,6 +1269,7 @@ function GameplaySession({
             bestCombo: finalBestCombo,
             score: finalScore,
           });
+          setCelebrationStep('done');
           setStatus('lost');
         }
       }, matchResolveDelayMs);
@@ -1086,6 +1289,7 @@ function GameplaySession({
         completeGame(false, {
           mismatchCount: mismatchCount + 1,
         });
+        setCelebrationStep('done');
         setStatus('lost');
       }
 
@@ -1139,6 +1343,7 @@ function GameplaySession({
     if (
       !isAiMode ||
       status !== 'playing' ||
+      isPaused ||
       currentTurn !== 'ai' ||
       isResolving ||
       selectedCards.length > 0 ||
@@ -1189,6 +1394,7 @@ function GameplaySession({
             setSelectedCards([]);
             setIsResolving(false);
             aiTurnInProgressRef.current = false;
+            playSound('card-match', 0.66);
 
             if (nextMatches === pairCount) {
               finishAiGame(
@@ -1225,6 +1431,7 @@ function GameplaySession({
     currentTurn,
     finishAiGame,
     isAiMode,
+    isPaused,
     isResolving,
     pairCount,
     rememberSeenCards,
@@ -1259,6 +1466,7 @@ function GameplaySession({
     setIsResolving(false);
     if (isDuelMode) {
       setDuelOutcome('draw');
+      setCelebrationStep('done');
       setStatus('lost');
       if (exitScreen) {
         onNavigate(exitScreen);
@@ -1268,12 +1476,79 @@ function GameplaySession({
 
     onLoss();
     completeGame(false);
+    setCelebrationStep('done');
     setStatus('lost');
 
     if (exitScreen) {
       onNavigate(exitScreen);
     }
   };
+
+  const getNextCelebrationStep = useCallback((currentStep: typeof celebrationStep): typeof celebrationStep => {
+    if (currentStep === 'victory') {
+      return displayedRewards.leveledUp ? 'level' : displayedRewards.unlockedWorlds.length > 0 ? 'world' : 'done';
+    }
+
+    if (currentStep === 'level') {
+      return displayedRewards.unlockedWorlds.length > 0 ? 'world' : 'done';
+    }
+
+    return 'done';
+  }, [displayedRewards.leveledUp, displayedRewards.unlockedWorlds.length]);
+
+  const advanceCelebration = useCallback(() => {
+    if (status !== 'won') {
+      return;
+    }
+
+    setCelebrationStep((currentStep) => getNextCelebrationStep(currentStep));
+  }, [getNextCelebrationStep, status]);
+
+  useEffect(() => {
+    if (status !== 'won' || celebrationStep !== 'victory') {
+      return undefined;
+    }
+
+    const timerId = window.setTimeout(advanceCelebration, 3000);
+
+    return () => window.clearTimeout(timerId);
+  }, [advanceCelebration, celebrationStep, status]);
+
+  useEffect(() => {
+    if (status === 'playing') {
+      return;
+    }
+
+    document.querySelector('.screen-stack')?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [celebrationStep, status]);
+
+  useEffect(() => {
+    if (lastStatusSoundRef.current === status) {
+      return;
+    }
+
+    lastStatusSoundRef.current = status;
+
+    if (status === 'won') {
+      playSound('victory', 0.76);
+    } else if (status === 'lost') {
+      playSound('defeat', 0.76);
+    }
+  }, [displayedRewards.earnedCoins, status]);
+
+  useEffect(() => {
+    if (lastCelebrationSoundRef.current === celebrationStep) {
+      return;
+    }
+
+    lastCelebrationSoundRef.current = celebrationStep;
+
+    if (celebrationStep === 'level') {
+      playSound('level-up', 0.82);
+    } else if (celebrationStep === 'world') {
+      playSound('world-unlocked', 0.82);
+    }
+  }, [celebrationStep]);
 
   const boardStyle = {
     '--board-columns': boardConfig.columns,
@@ -1308,9 +1583,13 @@ function GameplaySession({
                 {(['easy', 'medium', 'hard'] as AiDifficulty[]).map((difficulty) => (
                   <button
                     className={aiDifficulty === difficulty ? 'selected' : ''}
-                    disabled={status !== 'playing' || isResolving || aiThinking}
+                    disabled={!canChangeAiDifficulty}
                     key={difficulty}
-                    onClick={() => setAiDifficulty(difficulty)}
+                    onClick={() => {
+                      if (canChangeAiDifficulty) {
+                        setAiDifficulty(difficulty);
+                      }
+                    }}
                     type="button"
                   >
                     {difficulty}
@@ -1378,7 +1657,8 @@ function GameplaySession({
                 const isDisabled =
                   isUnavailable ||
                   status !== 'playing' ||
-      isResolving ||
+                  isPaused ||
+                  isResolving ||
                   aiThinking ||
                   !isPlayerTurn ||
                   goldenPassportActive ||
@@ -1480,7 +1760,7 @@ function GameplaySession({
             const isVisible = isCardVisible(card);
             const cardFaceUrl = getCardFaceAssetPath(world, card.symbol);
             const isCardImageLoaded = cardImageStatus[cardFaceUrl] === 'loaded';
-            const isCardLocked = status !== 'playing' || isResolving || aiThinking || !isPlayerTurn || card.matched;
+            const isCardLocked = status !== 'playing' || isPaused || isResolving || aiThinking || !isPlayerTurn || card.matched;
             const cardStateClass = [
               'memory-card playable',
               isVisible ? 'flipped' : '',
@@ -1543,8 +1823,15 @@ function GameplaySession({
             })}
           </div>
 
-        <div className="game-action-row">
-            <button className="secondary-button" onClick={onRestart} type="button">Restart</button>
+        <div className="game-action-row gameplay-controls">
+            <button
+              className="secondary-button"
+              disabled={status !== 'playing'}
+              onClick={() => setIsPaused((currentPaused) => !currentPaused)}
+              type="button"
+            >
+              {isPaused ? 'Resume' : 'Pause'}
+            </button>
             <button
               className="secondary-button danger-action"
               disabled={status !== 'playing'}
@@ -1553,47 +1840,29 @@ function GameplaySession({
             >
               Give Up
             </button>
-            <button className="primary-button" onClick={() => requestGameplayExit('mode-select')} type="button">Back to Modes</button>
+            <button className="secondary-button" onClick={() => requestGameplayExit('mode-select')} type="button">Modes</button>
           </div>
       </div>
 
-      {newlyUnlockedAchievements.length > 0 ? (
-        <div className="achievement-toast-stack" aria-live="polite">
-          {newlyUnlockedAchievements.slice(-3).map((achievement) => (
-            <div className="achievement-toast" key={achievement.id}>
-              <span className="achievement-toast-medal" aria-hidden="true">B</span>
-              <div>
-                <strong>Badge Unlocked</strong>
-                <span>{achievement.title}</span>
-              </div>
-            </div>
-          ))}
+      {status === 'playing' && isPaused ? (
+        <div className="paused-banner" role="status" aria-live="polite">
+          <strong>Paused</strong>
+          <span>Cards are locked until you resume.</span>
         </div>
       ) : null}
 
-      {(status === 'won' && displayedRewards.leveledUp) || dailyChallengeReward ? (
-        <div className="reward-popup-stack" aria-live="polite">
-          {status === 'won' && displayedRewards.leveledUp ? (
-            <div className="reward-popup">
-              <span className="reward-sparkles" aria-hidden="true" />
-              <strong>Level Up</strong>
-              <span>Level {profile.level}</span>
+      {showRewardToasts ? (
+        <div className={`reward-popup-stack ${status === 'playing' ? '' : 'reward-popup-stack-after-game'}`} aria-live="polite">
+          {rewardToasts.slice(-4).map((toast) => (
+            <div className={`reward-popup reward-popup-${toast.kind}`} key={toast.id}>
+              <span className="reward-toast-icon" aria-hidden="true">{rewardToastIcons[toast.kind]}</span>
+              <div>
+                <strong>{toast.title}</strong>
+                <span>{toast.detail}</span>
+                <em>{toast.reward}</em>
+              </div>
             </div>
-          ) : null}
-          {dailyChallengeReward?.dailyMissionsCompleted.length ? (
-            <div className="reward-popup">
-              <span className="reward-sparkles" aria-hidden="true" />
-              <strong>Daily Challenge Complete</strong>
-              <span>+{dailyChallengeReward.rewardXp} XP</span>
-            </div>
-          ) : null}
-          {dailyChallengeReward?.weeklyChallengeCompleted ? (
-            <div className="reward-popup">
-              <span className="reward-sparkles" aria-hidden="true" />
-              <strong>Weekly Challenge Complete</strong>
-              <span>+{dailyChallengeReward.rewardCoins} coins</span>
-            </div>
-          ) : null}
+          ))}
         </div>
       ) : null}
 
@@ -1615,9 +1884,55 @@ function GameplaySession({
         </div>
       ) : null}
 
-      {status !== 'playing' ? (
-        <div className="victory-overlay" role="dialog" aria-modal="true" aria-label={status === 'won' ? 'Victory' : 'Game over'}>
-          <div className="victory-card">
+      {status === 'won' && celebrationStep === 'level' ? (
+        <div className="victory-overlay celebration-overlay" onClick={advanceCelebration} role="dialog" aria-modal="true" aria-label="Level up">
+          <div className="celebration-card level-celebration" onClick={(event) => event.stopPropagation()}>
+            <span className="celebration-medal" aria-hidden="true">★</span>
+            <strong>LEVEL UP!</strong>
+            <h2>Level {displayedRewards.nextLevel ?? profile.level} Reached</h2>
+            <p>Your explorer rank increased.</p>
+            <small>New rewards unlocked</small>
+            <button className="primary-button wide" onClick={advanceCelebration} type="button">Continue Journey</button>
+          </div>
+        </div>
+      ) : null}
+
+      {status === 'won' && celebrationStep === 'world' ? (
+        <div
+          className="victory-overlay celebration-overlay world-celebration-overlay"
+          onClick={advanceCelebration}
+          role="dialog"
+          aria-modal="true"
+          aria-label="World unlocked"
+          style={displayedRewards.unlockedWorlds[0] ? { '--unlock-world-image': `url("/assets/backgrounds/${getWorldAssetId(displayedRewards.unlockedWorlds[0].id)}.png")` } as CSSProperties : undefined}
+        >
+          <div className="celebration-card world-celebration" onClick={(event) => event.stopPropagation()}>
+            <span className="celebration-medal" aria-hidden="true">✓</span>
+            <strong>WORLD UNLOCKED!</strong>
+            <h2>{displayedRewards.unlockedWorlds.map((nextWorld) => nextWorld.name).join(', ')}</h2>
+            <p>A new destination is ready.</p>
+            <button className="primary-button wide" onClick={advanceCelebration} type="button">Continue Journey</button>
+          </div>
+        </div>
+      ) : null}
+
+      {status !== 'playing' && !(status === 'won' && (celebrationStep === 'level' || celebrationStep === 'world')) ? (
+        <div
+          className="victory-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={status === 'won' ? 'Victory' : 'Game over'}
+        >
+          <div className={`victory-card end-card ${status === 'won' ? 'end-card-win' : 'end-card-loss'}`}>
+            {status === 'won' ? (
+              <div className="coin-burst" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : null}
             <span className={status === 'won' ? 'badge premium-badge' : 'badge danger-badge'}>
               {isDuelMode && duelOutcome
                 ? `Winner: ${duelOutcome === 'player1' ? duelPlayer1Name : duelOutcome === 'player2' ? duelPlayer2Name : 'Draw'}`
@@ -1625,9 +1940,10 @@ function GameplaySession({
                   ? `Winner: ${aiOutcome === 'player' ? 'Player' : aiOutcome === 'ai' ? 'AI' : 'Draw'}`
                   : status === 'won' ? 'Route Complete' : 'Route Failed'}
             </span>
-            {status === 'won' && displayedRewards.leveledUp ? <span className="badge timer-badge level-up-badge">Level Up</span> : null}
             <h2>
-              {isDuelMode && duelOutcome
+              {status === 'lost'
+                ? 'Defeat'
+                : isDuelMode && duelOutcome
                 ? duelOutcome === 'draw'
                   ? 'Draw'
                   : `${duelOutcome === 'player1' ? duelPlayer1Name : duelPlayer2Name} Wins`
@@ -1656,18 +1972,10 @@ function GameplaySession({
                 ? `You completed ${world.name} in ${mode.name}.`
                 : 'Restart the route or return to modes to try a different rule set.'}
             </p>
-            {dailyChallengeReward ? (
-              <div className="daily-complete-message">
-                {dailyChallengeReward.dailyMissionsCompleted.length > 0 ? (
-                  <span>
-                    Daily Mission Completed: {dailyChallengeReward.dailyMissionsCompleted.map((mission) => mission.title).join(', ')}
-                  </span>
-                ) : null}
-                {dailyChallengeReward.dailyChestUnlocked ? <span>Daily Chest Unlocked</span> : null}
-                {dailyChallengeReward.weeklyChallengeCompleted ? <span>Weekly Challenge Completed</span> : null}
-                <strong>
-                  +{dailyChallengeReward.rewardXp} XP and +{dailyChallengeReward.rewardCoins} coins
-                </strong>
+            {status === 'won' && !isDuelMode && (displayedRewards.earnedXp > 0 || displayedRewards.earnedCoins > 0) ? (
+              <div className="reward-rain">
+                <span>+{displayedRewards.earnedXp} XP</span>
+                <span>+{displayedRewards.earnedCoins} coins</span>
               </div>
             ) : null}
             <div className="victory-stats">
@@ -1685,8 +1993,12 @@ function GameplaySession({
               <span><strong>{status === 'won' && !isDuelMode ? displayedRewards.earnedCoins : 0}</strong> Coins</span>
             </div>
             <div className="game-action-row">
-              <button className="secondary-button" onClick={onRestart} type="button">Restart</button>
-              <button className="primary-button" onClick={() => onNavigate('mode-select')} type="button">Back to Modes</button>
+              <button className="secondary-button" onClick={onRestart} type="button">
+                {status === 'lost' ? 'Try Again' : 'Restart'}
+              </button>
+              <button className="primary-button" onClick={() => onNavigate(status === 'lost' ? 'main-menu' : 'mode-select')} type="button">
+                {status === 'lost' ? 'Home' : 'Back to Modes'}
+              </button>
             </div>
           </div>
         </div>

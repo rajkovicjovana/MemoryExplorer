@@ -24,7 +24,7 @@ export function DailyChallenge({ profile }: DailyChallengeProps) {
     weeklyProgress.rewarded;
 
   return (
-    <section className="screen">
+    <section className="screen daily-screen">
       <ScreenHeader title="Daily Missions" subtitle="Complete daily routes and build toward a harder weekly goal." />
 
       <div className="daily-section-header">

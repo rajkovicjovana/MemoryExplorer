@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BottomNav } from './components/BottomNav';
 import { TopStatusBar } from './components/TopStatusBar';
 import { gameModes } from './data/gameData';
@@ -25,6 +25,7 @@ import {
   saveProfile,
   unlockGameplayAchievements,
 } from './utils/progression';
+import { playSound, unlockAudio } from './utils/audio';
 
 function App() {
   const [profile, setProfile] = useState(loadProfile);
@@ -37,10 +38,38 @@ function App() {
   const [selectedMode, setSelectedMode] = useState<GameMode>(gameModes[0]);
   const [duelPlayers, setDuelPlayers] = useState({ player1: 'Player 1', player2: 'Player 2' });
   const [activeGameExitHandler, setActiveGameExitHandler] = useState<((screen: ScreenId) => void) | null>(null);
+  const screenStackRef = useRef<HTMLElement | null>(null);
+  const profileRef = useRef(profile);
 
   useEffect(() => {
+    profileRef.current = profile;
     saveProfile(profile);
   }, [profile]);
+
+  useEffect(() => {
+    const handleFirstInteraction = () => unlockAudio();
+    const handleButtonClick = (event: MouseEvent) => {
+      const button = (event.target as HTMLElement).closest('button');
+
+      if (button) {
+        playSound('button-click', 0.46);
+      }
+    };
+
+    window.addEventListener('pointerdown', handleFirstInteraction, { capture: true });
+    window.addEventListener('keydown', handleFirstInteraction, { capture: true });
+    document.addEventListener('click', handleButtonClick, { capture: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', handleFirstInteraction, { capture: true });
+      window.removeEventListener('keydown', handleFirstInteraction, { capture: true });
+      document.removeEventListener('click', handleButtonClick, { capture: true });
+    };
+  }, []);
+
+  useEffect(() => {
+    screenStackRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [activeScreen]);
 
   const currentSelectedWorld = useMemo(
     () => unlockedWorlds.find((world) => world.id === selectedWorld.id) ?? unlockedWorlds[0],
@@ -49,69 +78,69 @@ function App() {
 
 
   const handleVictory = useCallback((victory: VictoryProgress): ProgressUpdate => {
-    const update = applyVictoryProgress(profile, victory);
+    const update = applyVictoryProgress(profileRef.current, victory);
 
+    profileRef.current = update.profile;
     setProfile(update.profile);
 
     return update;
-  }, [profile]);
+  }, []);
 
   const handleLoss = useCallback(() => {
-    setProfile((currentProfile) => applyLossProgress(currentProfile));
+    const nextProfile = applyLossProgress(profileRef.current);
+
+    profileRef.current = nextProfile;
+    setProfile(nextProfile);
   }, []);
 
   const handleWorldModeComplete = useCallback((worldId: string, modeId: string) => {
-    setProfile((currentProfile) => markWorldModeCompleted(currentProfile, worldId, modeId));
+    const nextProfile = markWorldModeCompleted(profileRef.current, worldId, modeId);
+
+    profileRef.current = nextProfile;
+    setProfile(nextProfile);
   }, []);
 
   const handleDailyChallengeCheck = useCallback((result: DailyChallengeGameResult): DailyChallengeUpdate => {
-    let dailyUpdate: DailyChallengeUpdate | null = null;
+    const update = applyDailyChallengeProgress(profileRef.current, result);
 
-    setProfile((currentProfile) => {
-      dailyUpdate = applyDailyChallengeProgress(currentProfile, result);
+    profileRef.current = update.profile;
+    setProfile(update.profile);
 
-      return dailyUpdate.profile;
-    });
-
-    return dailyUpdate ?? {
-      dailyChestUnlocked: false,
-      dailyMissionsCompleted: [],
-      profile,
-      rewardCoins: 0,
-      rewardXp: 0,
-      weeklyChallengeCompleted: false,
-    };
-  }, [profile]);
+    return update;
+  }, []);
 
   const handleAchievementUnlock = useCallback((achievementIds: string[]): AchievementProgress => {
-    const update = unlockGameplayAchievements(profile, achievementIds);
+    const update = unlockGameplayAchievements(profileRef.current, achievementIds);
 
     if (update.newlyUnlockedAchievements.length > 0) {
+      profileRef.current = update.profile;
       setProfile(update.profile);
     }
 
     return update;
-  }, [profile]);
+  }, []);
 
   const handlePurchaseShopItem = useCallback((itemId: string) => {
-    const result = purchaseShopItem(profile, itemId);
+    const result = purchaseShopItem(profileRef.current, itemId);
 
-    if (result.profile !== profile) {
+    if (result.profile !== profileRef.current) {
+      profileRef.current = result.profile;
       setProfile(result.profile);
     }
 
     return result;
-  }, [profile]);
+  }, []);
 
   const handleUsePowerUp = useCallback((powerUpId: PowerUpId) => {
-    const result = consumePowerUp(profile, powerUpId);
+    const result = consumePowerUp(profileRef.current, powerUpId);
 
-    if (result.profile !== profile) {
+    if (result.profile !== profileRef.current) {
+      profileRef.current = result.profile;
       setProfile(result.profile);
     }
 
     return result;
-  }, [profile]);
+  }, []);
 
   const handleResetProgress = useCallback(() => {
     if (!window.confirm('Reset all local Memory Explorer progress?')) {
@@ -122,6 +151,7 @@ function App() {
     const defaultWorlds = getWorldsForLevel(defaultProfile.level, defaultProfile.worldCompletions);
 
     setProfile(defaultProfile);
+    profileRef.current = defaultProfile;
     setSelectedWorld(defaultWorlds[0]);
     setActiveScreen('profile');
   }, []);
@@ -226,7 +256,7 @@ function App() {
     <div className="app-shell">
       <div className="phone-frame">
         <TopStatusBar profile={profile} />
-        <main className="screen-stack">{activeContent}</main>
+        <main className="screen-stack" ref={screenStackRef}>{activeContent}</main>
         <BottomNav activeScreen={activeScreen} onNavigate={handleNavigate} />
       </div>
     </div>

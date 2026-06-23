@@ -23,6 +23,11 @@ export type PlayerProfile = {
   bestTime: string;
   bestCombo: number;
   unlockedAchievements: string[];
+  classicWins: number;
+  dailyMissionsCompleted: number;
+  weeklyChallengesCompleted: number;
+  perfectWins: number;
+  highestCombo: number;
   worldCompletions: Record<string, Record<string, boolean>>;
   powerUpInventory: Partial<Record<PowerUpId, number>>;
   dailyMissions: DailyMissionsProgress | null;
@@ -60,6 +65,8 @@ export type Achievement = {
   progress: number;
   target: number;
   unlocked: boolean;
+  chain?: string;
+  tier?: 'Bronze' | 'Silver' | 'Gold';
 };
 
 export type PowerUpId = 'compass' | 'camera' | 'fast-travel' | 'golden-passport' | 'shuffle' | 'souvenir';

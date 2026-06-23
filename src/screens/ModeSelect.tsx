@@ -1,4 +1,4 @@
-import { Bot, Layers, Leaf, Mountain, Timer, Trophy, Users } from 'lucide-react';
+import { Bot, Layers, Leaf, Mountain, Timer, Users } from 'lucide-react';
 import type { GameMode, World } from '../types/game';
 import { gameModes } from '../data/gameData';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -17,7 +17,6 @@ const modePresentation: Record<string, { difficulty: string; Icon: typeof Layers
   'time-attack': { difficulty: 'Fast', Icon: Timer, tagline: 'Beat the clock', instructions: 'Finish before time runs out.' },
   survival: { difficulty: 'Hard', Icon: Mountain, tagline: 'Limited moves', instructions: 'Complete the board before moves run out.' },
   zen: { difficulty: 'Calm', Icon: Leaf, tagline: 'Calm exploration', instructions: 'No pressure, no penalties.' },
-  challenge: { difficulty: 'Daily', Icon: Trophy, tagline: 'Badge route', instructions: 'Clear special goals for rewards.' },
   ai: { difficulty: 'Rival', Icon: Bot, tagline: 'Outsmart the AI', instructions: 'Take turns against memory AI.' },
   duel: { difficulty: 'Local', Icon: Users, tagline: 'Local duel', instructions: 'Two players take turns on one device.' },
 };
