@@ -5280,6 +5280,39 @@ body,
   color: #70d6ff;
 }
 
+.level-reward-list {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(255, 230, 109, 0.22);
+  border-radius: 18px;
+  padding: 10px;
+  background: rgba(255, 230, 109, 0.08);
+}
+
+.level-reward-heading {
+  color: #fff4a8;
+  font-size: 0.74rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.level-reward-bundle {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.level-reward-bundle span {
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: #f8fbff;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
 .celebration-card .primary-button {
   margin-top: 4px;
 }

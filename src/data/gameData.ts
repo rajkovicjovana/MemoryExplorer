@@ -28,6 +28,7 @@ export const playerProfile: PlayerProfile = {
   highestCombo: 0,
   worldCompletions: {},
   powerUpInventory: {},
+  claimedLevelRewards: [],
   dailyMissions: null,
   weeklyChallenge: null,
 };

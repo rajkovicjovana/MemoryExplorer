@@ -6,6 +6,7 @@ import type {
   AchievementProgress,
   DailyChallengeGameResult,
   DailyChallengeUpdate,
+  LevelReward,
   ProgressUpdate,
   ShopActionResult,
   VictoryProgress,
@@ -71,6 +72,7 @@ type VictoryRewards = {
   leveledUp: boolean;
   previousLevel?: number;
   nextLevel?: number;
+  levelRewards: LevelReward[];
   unlockedWorlds: World[];
 };
 
@@ -289,6 +291,10 @@ function getPowerUpAssetPath(powerUpId: PowerUpId): string {
   return `/assets/icons/powerup-${powerUpId}.png`;
 }
 
+function getPowerUpName(powerUpId: PowerUpId): string {
+  return powerUps.find((powerUp) => powerUp.id === powerUpId)?.name ?? powerUpId;
+}
+
 function getModeLabel(mode: GameMode): string {
   if (mode.id === 'ai') {
     return 'Player vs AI';
@@ -336,6 +342,7 @@ function calculateRewards(
     return {
       earnedXp: 0,
       earnedCoins: 0,
+      levelRewards: [],
       unlockedWorlds: [],
     };
   }
@@ -348,6 +355,7 @@ function calculateRewards(
   return {
     earnedXp: baseXp + comboBonus + speedBonus + perfectBonus,
     earnedCoins: Math.max(12, Math.round(score / 45) + bestCombo * 2) + (hasSouvenirBonus ? souvenirCoinBonus : 0),
+    levelRewards: [],
     unlockedWorlds: [],
   };
 }
@@ -426,6 +434,7 @@ function GameplaySession({
   const [celebrationStep, setCelebrationStep] = useState<'victory' | 'level' | 'world' | 'done'>('victory');
   const [, setNewlyUnlockedAchievements] = useState<Achievement[]>([]);
   const [rewardToasts, setRewardToasts] = useState<RewardToast[]>([]);
+  const [pendingLevelRewards, setPendingLevelRewards] = useState<LevelReward[]>([]);
   const [souvenirBonusActive, setSouvenirBonusActive] = useState(false);
   const [powerUpsUsedCount, setPowerUpsUsedCount] = useState(0);
   const [temporaryRevealedIds, setTemporaryRevealedIds] = useState<string[]>([]);
@@ -468,6 +477,7 @@ function GameplaySession({
   const hasSouvenirBonus = souvenirBonusActive;
   const displayedRewards = victoryRewards ?? {
     ...calculateRewards(score, bestCombo, hasSouvenirBonus, mode, world, elapsedSeconds, mismatchCount),
+    levelRewards: [],
     leveledUp: false,
   };
   const powerUpsEnabled = !isZen && !isDuelMode;
@@ -654,6 +664,26 @@ function GameplaySession({
     window.setTimeout(() => setPowerUpMessage(''), 2200);
   };
 
+  const rememberLevelRewards = useCallback((nextLevelRewards: LevelReward[]) => {
+    if (nextLevelRewards.length === 0) {
+      return;
+    }
+
+    setPendingLevelRewards((currentRewards) => [
+      ...currentRewards,
+      ...nextLevelRewards.filter(
+        (nextReward) => !currentRewards.some((currentReward) => currentReward.level === nextReward.level),
+      ),
+    ]);
+  }, []);
+
+  const handleGameplayAchievementUnlocks = useCallback((achievementIds: string[]) => {
+    const achievementUpdate = onAchievementUnlock(achievementIds);
+
+    rememberLevelRewards(achievementUpdate.levelRewards);
+    showAchievementUnlocks(achievementUpdate.newlyUnlockedAchievements);
+  }, [onAchievementUnlock, rememberLevelRewards, showAchievementUnlocks]);
+
   const checkDailyChallenge = useCallback((result: DailyChallengeGameResult, options?: { showInResult?: boolean }) => {
     const update = onDailyChallengeCheck(result);
 
@@ -669,6 +699,12 @@ function GameplaySession({
               leveledUp: currentRewards.leveledUp || update.leveledUp,
               nextLevel: Math.max(currentRewards.nextLevel ?? update.nextLevel, update.nextLevel),
               previousLevel: currentRewards.previousLevel ?? update.previousLevel,
+              levelRewards: [
+                ...currentRewards.levelRewards,
+                ...update.levelRewards.filter(
+                  (nextReward) => !currentRewards.levelRewards.some((currentReward) => currentReward.level === nextReward.level),
+                ),
+              ],
               unlockedWorlds: [
                 ...currentRewards.unlockedWorlds,
                 ...update.unlockedWorlds.filter(
@@ -717,7 +753,8 @@ function GameplaySession({
     if (update.newlyUnlockedAchievements.length > 0) {
       showAchievementUnlocks(update.newlyUnlockedAchievements);
     }
-  }, [onDailyChallengeCheck, showAchievementUnlocks]);
+    rememberLevelRewards(update.levelRewards);
+  }, [onDailyChallengeCheck, rememberLevelRewards, showAchievementUnlocks]);
 
   const checkLiveRewards = useCallback((nextBestCombo: number, nextPowerUpsUsed: number) => {
     if (isDuelMode || isZen) {
@@ -845,11 +882,18 @@ function GameplaySession({
     });
 
     setScore(finalVictoryScore);
+    const combinedLevelRewards = [
+      ...pendingLevelRewards,
+      ...progressUpdate.levelRewards.filter(
+        (nextReward) => !pendingLevelRewards.some((currentReward) => currentReward.level === nextReward.level),
+      ),
+    ];
     setVictoryRewards({
       ...rewards,
-      leveledUp: progressUpdate.leveledUp,
+      leveledUp: progressUpdate.leveledUp || combinedLevelRewards.length > 0,
       nextLevel: progressUpdate.nextLevel,
       previousLevel: progressUpdate.previousLevel,
+      levelRewards: combinedLevelRewards,
       unlockedWorlds: progressUpdate.unlockedWorlds,
     });
     showAchievementUnlocks(progressUpdate.newlyUnlockedAchievements);
@@ -861,7 +905,7 @@ function GameplaySession({
     });
     setCelebrationStep('victory');
     setStatus('won');
-  }, [completeGame, elapsedSeconds, hasSouvenirBonus, mode, onLoss, onVictory, showAchievementUnlocks, world]);
+  }, [completeGame, elapsedSeconds, hasSouvenirBonus, mode, onLoss, onVictory, pendingLevelRewards, showAchievementUnlocks, world]);
 
   const finishSoloVictory = useCallback((finalScore: number, finalBestCombo: number, finalMismatchCount: number) => {
     const finalVictoryScore = finalScore + (hasSouvenirBonus ? souvenirScoreBonus : 0);
@@ -871,6 +915,7 @@ function GameplaySession({
       setVictoryRewards({
         earnedCoins: 0,
         earnedXp: 0,
+        levelRewards: [],
         leveledUp: false,
         unlockedWorlds: [],
       });
@@ -891,11 +936,18 @@ function GameplaySession({
     });
 
     setScore(finalVictoryScore);
+    const combinedLevelRewards = [
+      ...pendingLevelRewards,
+      ...progressUpdate.levelRewards.filter(
+        (nextReward) => !pendingLevelRewards.some((currentReward) => currentReward.level === nextReward.level),
+      ),
+    ];
     setVictoryRewards({
       ...rewards,
-      leveledUp: progressUpdate.leveledUp,
+      leveledUp: progressUpdate.leveledUp || combinedLevelRewards.length > 0,
       nextLevel: progressUpdate.nextLevel,
       previousLevel: progressUpdate.previousLevel,
+      levelRewards: combinedLevelRewards,
       unlockedWorlds: progressUpdate.unlockedWorlds,
     });
     showAchievementUnlocks(progressUpdate.newlyUnlockedAchievements);
@@ -906,7 +958,7 @@ function GameplaySession({
     });
     setCelebrationStep('victory');
     setStatus('won');
-  }, [completeGame, elapsedSeconds, hasSouvenirBonus, isZen, mode, onVictory, onWorldModeComplete, showAchievementUnlocks, world]);
+  }, [completeGame, elapsedSeconds, hasSouvenirBonus, isZen, mode, onVictory, onWorldModeComplete, pendingLevelRewards, showAchievementUnlocks, world]);
 
   const revealTemporarily = (cardIds: string[], durationMs: number) => {
     setTemporaryRevealedIds(cardIds);
@@ -1167,7 +1219,7 @@ function GameplaySession({
         const gameplayAchievementIds = getLiveComboAchievementIds(nextCombo);
 
         if (!isDuelMode) {
-          showAchievementUnlocks(onAchievementUnlock(gameplayAchievementIds).newlyUnlockedAchievements);
+          handleGameplayAchievementUnlocks(gameplayAchievementIds);
           checkLiveRewards(finalBestCombo, powerUpsUsedCount);
         }
 
@@ -1252,7 +1304,7 @@ function GameplaySession({
         const gameplayAchievementIds = getLiveComboAchievementIds(nextCombo);
 
         if (!isDuelMode) {
-          showAchievementUnlocks(onAchievementUnlock(gameplayAchievementIds).newlyUnlockedAchievements);
+          handleGameplayAchievementUnlocks(gameplayAchievementIds);
           checkLiveRewards(finalBestCombo, powerUpsUsedCount);
         }
 
@@ -1891,7 +1943,23 @@ function GameplaySession({
             <strong>LEVEL UP!</strong>
             <h2>Level {displayedRewards.nextLevel ?? profile.level} Reached</h2>
             <p>Your explorer rank increased.</p>
-            <small>New rewards unlocked</small>
+            {displayedRewards.levelRewards.length > 0 ? (
+              <div className="level-reward-list" aria-label="Level up rewards">
+                <span className="level-reward-heading">Rewards</span>
+                {displayedRewards.levelRewards.map((reward) => (
+                  <div className="level-reward-bundle" key={reward.level}>
+                    <span>+{reward.coins} coins</span>
+                    {reward.powerUps.map((powerUp) => (
+                      <span key={`${reward.level}-${powerUp.id}`}>
+                        {getPowerUpName(powerUp.id)} x{powerUp.quantity}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <small>New rewards unlocked</small>
+            )}
             <button className="primary-button wide" onClick={advanceCelebration} type="button">Continue Journey</button>
           </div>
         </div>

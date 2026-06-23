@@ -30,6 +30,7 @@ export type ProgressUpdate = {
   leveledUp: boolean;
   previousLevel: number;
   nextLevel: number;
+  levelRewards: LevelReward[];
   unlockedWorlds: World[];
 };
 
@@ -37,6 +38,7 @@ export type AchievementProgress = {
   newlyUnlockedAchievements: Achievement[];
   profile: PlayerProfile;
   leveledUp: boolean;
+  levelRewards: LevelReward[];
   rewardXp: number;
 };
 
@@ -58,6 +60,7 @@ type StoredProfile = Pick<
   | 'highestCombo'
   | 'worldCompletions'
   | 'powerUpInventory'
+  | 'claimedLevelRewards'
   | 'dailyMissions'
   | 'weeklyChallenge'
 > & {
@@ -85,6 +88,7 @@ export type DailyChallengeUpdate = {
   dailyChestUnlocked: boolean;
   dailyMissionsCompleted: DailyMission[];
   leveledUp: boolean;
+  levelRewards: LevelReward[];
   newlyUnlockedAchievements: Achievement[];
   nextLevel: number;
   previousLevel: number;
@@ -93,6 +97,12 @@ export type DailyChallengeUpdate = {
   rewardXp: number;
   unlockedWorlds: World[];
   weeklyChallengeCompleted: boolean;
+};
+
+export type LevelReward = {
+  coins: number;
+  level: number;
+  powerUps: Array<{ id: PowerUpId; quantity: number }>;
 };
 
 const worldUnlockLevels: Record<string, number> = {
@@ -272,6 +282,7 @@ function emptyDailyChallengeUpdate(profile: PlayerProfile): DailyChallengeUpdate
     dailyChestUnlocked: false,
     dailyMissionsCompleted: [],
     leveledUp: false,
+    levelRewards: [],
     newlyUnlockedAchievements: [],
     nextLevel: profile.level,
     previousLevel: profile.level,
@@ -280,6 +291,76 @@ function emptyDailyChallengeUpdate(profile: PlayerProfile): DailyChallengeUpdate
     rewardXp: 0,
     unlockedWorlds: [],
     weeklyChallengeCompleted: false,
+  };
+}
+
+function getLevelReward(level: number): LevelReward {
+  const fixedRewards: Record<number, LevelReward> = {
+    2: { coins: 50, level: 2, powerUps: [{ id: 'compass', quantity: 1 }] },
+    3: { coins: 75, level: 3, powerUps: [{ id: 'camera', quantity: 1 }] },
+    4: { coins: 100, level: 4, powerUps: [{ id: 'fast-travel', quantity: 1 }, { id: 'compass', quantity: 1 }] },
+    5: { coins: 125, level: 5, powerUps: [{ id: 'golden-passport', quantity: 1 }] },
+    6: { coins: 150, level: 6, powerUps: [{ id: 'shuffle', quantity: 1 }, { id: 'camera', quantity: 1 }] },
+    7: { coins: 175, level: 7, powerUps: [{ id: 'souvenir', quantity: 1 }, { id: 'fast-travel', quantity: 1 }] },
+    8: { coins: 200, level: 8, powerUps: [{ id: 'golden-passport', quantity: 1 }, { id: 'shuffle', quantity: 1 }] },
+    9: { coins: 250, level: 9, powerUps: [{ id: 'camera', quantity: 2 }, { id: 'compass', quantity: 2 }] },
+    10: { coins: 300, level: 10, powerUps: [{ id: 'golden-passport', quantity: 2 }, { id: 'souvenir', quantity: 2 }] },
+  };
+
+  if (fixedRewards[level]) {
+    return fixedRewards[level];
+  }
+
+  const rotatingPowerUps: PowerUpId[] = ['compass', 'camera', 'fast-travel', 'shuffle', 'golden-passport', 'souvenir'];
+  const firstPowerUp = rotatingPowerUps[level % rotatingPowerUps.length];
+  const secondPowerUp = rotatingPowerUps[(level + 3) % rotatingPowerUps.length];
+
+  return {
+    coins: Math.min(500, 300 + Math.max(0, level - 10) * 25),
+    level,
+    powerUps: [
+      { id: firstPowerUp, quantity: 1 },
+      ...(level % 2 === 0 ? [{ id: secondPowerUp, quantity: 1 }] : []),
+    ],
+  };
+}
+
+function grantLevelRewards(profile: PlayerProfile, previousLevel: number, nextLevel: number): { profile: PlayerProfile; rewards: LevelReward[] } {
+  if (nextLevel <= previousLevel) {
+    return { profile, rewards: [] };
+  }
+
+  const claimedLevels = new Set(profile.claimedLevelRewards);
+  const rewards: LevelReward[] = [];
+  let coins = profile.coins;
+  const powerUpInventory = { ...profile.powerUpInventory };
+
+  for (let level = previousLevel + 1; level <= nextLevel; level += 1) {
+    if (claimedLevels.has(level)) {
+      continue;
+    }
+
+    const reward = getLevelReward(level);
+    rewards.push(reward);
+    claimedLevels.add(level);
+    coins += reward.coins;
+    reward.powerUps.forEach((powerUp) => {
+      powerUpInventory[powerUp.id] = (powerUpInventory[powerUp.id] ?? 0) + powerUp.quantity;
+    });
+  }
+
+  if (rewards.length === 0) {
+    return { profile, rewards };
+  }
+
+  return {
+    profile: {
+      ...profile,
+      claimedLevelRewards: Array.from(claimedLevels).sort((firstLevel, secondLevel) => firstLevel - secondLevel),
+      coins,
+      powerUpInventory,
+    },
+    rewards,
   };
 }
 
@@ -393,6 +474,9 @@ function hydrateProfile(storedProfile?: Partial<StoredProfile>): PlayerProfile {
     highestCombo: storedProfile?.highestCombo ?? Math.max(defaultProfile.highestCombo, storedProfile?.bestCombo ?? 0),
     worldCompletions: hydrateWorldCompletions(storedProfile),
     powerUpInventory: hydratePowerUpInventory(storedProfile),
+    claimedLevelRewards: Array.isArray(storedProfile?.claimedLevelRewards)
+      ? storedProfile.claimedLevelRewards.filter((levelReward) => Number.isInteger(levelReward) && levelReward > 1)
+      : defaultProfile.claimedLevelRewards,
     dailyMissions: hydrateDailyMissionsProgress(storedProfile),
     weeklyChallenge: hydrateWeeklyChallengeProgress(storedProfile),
   };
@@ -430,6 +514,7 @@ export function saveProfile(profile: PlayerProfile): void {
     highestCombo: profile.highestCombo,
     worldCompletions: profile.worldCompletions,
     powerUpInventory: profile.powerUpInventory,
+    claimedLevelRewards: profile.claimedLevelRewards,
     dailyMissions: profile.dailyMissions,
     weeklyChallenge: profile.weeklyChallenge,
   };
@@ -596,6 +681,7 @@ export function applyDailyChallengeProgress(profile: PlayerProfile, result: Dail
   let dailyChestUnlocked = false;
   let weeklyChallengeCompleted = false;
   let leveledUp = false;
+  let levelRewards: LevelReward[] = [];
   const dailyMissionsProgress: DailyMissionsProgress = {
     ...currentDailyProgress,
     missions: { ...currentDailyProgress.missions },
@@ -663,6 +749,11 @@ export function applyDailyChallengeProgress(profile: PlayerProfile, result: Dail
   nextProfile = achievementUpdate.profile;
   rewardXp += achievementUpdate.rewardXp;
   leveledUp = leveledUp || achievementUpdate.leveledUp;
+  levelRewards = [...levelRewards, ...achievementUpdate.levelRewards];
+
+  const levelRewardUpdate = grantLevelRewards(nextProfile, profile.level, nextProfile.level);
+  nextProfile = levelRewardUpdate.profile;
+  levelRewards = [...levelRewards, ...levelRewardUpdate.rewards];
 
   if (completedMissions.length === 0 && !dailyChestUnlocked && !weeklyChallengeCompleted) {
     return emptyDailyChallengeUpdate(nextProfile);
@@ -676,6 +767,7 @@ export function applyDailyChallengeProgress(profile: PlayerProfile, result: Dail
     dailyChestUnlocked,
     dailyMissionsCompleted: completedMissions,
     leveledUp,
+    levelRewards,
     newlyUnlockedAchievements: achievementUpdate.newlyUnlockedAchievements,
     nextLevel: nextProfile.level,
     previousLevel: profile.level,
@@ -727,7 +819,8 @@ export function applyVictoryProgress(profile: PlayerProfile, victory: VictoryPro
     profileWithWorldCompletion,
     getVictoryAchievementIds(profileWithWorldCompletion, victory),
   );
-  const finalProfile = achievementUpdate.profile;
+  const levelRewardUpdate = grantLevelRewards(achievementUpdate.profile, profile.level, achievementUpdate.profile.level);
+  const finalProfile = levelRewardUpdate.profile;
   const newlyUnlockedWorlds = getWorldsForLevel(finalProfile.level, finalProfile.worldCompletions).filter(
     (world) => world.unlocked && !previouslyUnlockedWorldIds.has(world.id),
   );
@@ -736,6 +829,7 @@ export function applyVictoryProgress(profile: PlayerProfile, victory: VictoryPro
     leveledUp: leveledUp || achievementUpdate.leveledUp,
     previousLevel: profile.level,
     nextLevel: finalProfile.level,
+    levelRewards: [...achievementUpdate.levelRewards, ...levelRewardUpdate.rewards],
     newlyUnlockedAchievements: achievementUpdate.newlyUnlockedAchievements,
     profile: finalProfile,
     unlockedWorlds: newlyUnlockedWorlds,
@@ -788,13 +882,15 @@ export function unlockAchievements(profile: PlayerProfile, achievementIds: strin
   });
 
   const xpUpdate = rewardXp > 0 ? awardXp(profile, rewardXp) : { leveledUp: false, profile };
+  const levelRewardUpdate = grantLevelRewards(xpUpdate.profile, profile.level, xpUpdate.profile.level);
 
   return {
     leveledUp: xpUpdate.leveledUp,
+    levelRewards: levelRewardUpdate.rewards,
     newlyUnlockedAchievements,
     rewardXp,
     profile: {
-      ...xpUpdate.profile,
+      ...levelRewardUpdate.profile,
       unlockedAchievements: Array.from(unlockedSet),
     },
   };

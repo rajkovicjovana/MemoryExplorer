@@ -30,6 +30,7 @@ export type PlayerProfile = {
   highestCombo: number;
   worldCompletions: Record<string, Record<string, boolean>>;
   powerUpInventory: Partial<Record<PowerUpId, number>>;
+  claimedLevelRewards: number[];
   dailyMissions: DailyMissionsProgress | null;
   weeklyChallenge: WeeklyChallengeProgress | null;
 };
