@@ -124,11 +124,11 @@ p {
 }
 
 .status-metrics {
-  width: 46%;
-  min-width: 150px;
+  width: 50%;
+  min-width: 176px;
   display: grid;
-  grid-template-columns: auto minmax(44px, 1fr) auto;
-  gap: 7px;
+  grid-template-columns: auto auto minmax(44px, 1fr) auto;
+  gap: 6px;
   align-items: center;
 }
 
@@ -3859,8 +3859,8 @@ body {
 }
 
 .top-status .status-metrics {
-  width: 178px;
-  min-width: 178px;
+  width: 204px;
+  min-width: 204px;
   justify-self: end;
 }
 
@@ -4016,8 +4016,8 @@ body {
   }
 
   .top-status .status-metrics {
-    width: 150px;
-    min-width: 150px;
+    width: 176px;
+    min-width: 176px;
   }
 
   .main-menu .hero-copy {
