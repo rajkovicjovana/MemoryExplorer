@@ -281,7 +281,32 @@ function getWorldAssetId(worldId: string): string {
   return worldId;
 }
 
+const mountainCardAssetPaths: Record<string, string> = {
+  Peak: '/assets/cards/mountain-1.png',
+  Cabin: '/assets/cards/mountain-2.png',
+  Compass: '/assets/cards/mountain-3.png',
+  Pine: '/assets/cards/mountain-4.png',
+  Glacier: '/assets/cards/mountain-5.png',
+  Eagle: '/assets/cards/mountain-6.png',
+  Campfire: '/assets/cards/mountain-7.png',
+  Backpack: '/assets/cards/mountain-8.png',
+  Waterfall: '/assets/cards/mountain-9.png',
+  'Rope Bridge': '/assets/cards/mountain-10.png',
+  Snowboard: '/assets/cards/mountain-11.png',
+  Lake: '/assets/cards/mountain-12.png',
+  Ibex: '/assets/cards/mountain-13.png',
+  Tent: '/assets/cards/mountain-14.png',
+  Map: '/assets/cards/mountain-15.png',
+  'Hot Spring': '/assets/cards/mountain-16.png',
+  'Summit Flag': '/assets/cards/mountain-17.png',
+  Lantern: '/assets/cards/mountain-18.png',
+};
+
 function getCardFaceAssetPath(world: World, symbol: string): string {
+  if (world.id === 'mountains') {
+    return mountainCardAssetPaths[symbol] ?? `/assets/cards/mountain-${symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`;
+  }
+
   const worldAssetId = getWorldAssetId(world.id);
   const symbolAssetId = symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
