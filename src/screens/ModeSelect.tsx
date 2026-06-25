@@ -1,4 +1,3 @@
-import { Bot, Layers, Leaf, Mountain, Timer, Users } from 'lucide-react';
 import type { GameMode, World } from '../types/game';
 import { gameModes } from '../data/gameData';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -13,14 +12,18 @@ type ModeSelectProps = {
   onPlay: (mode?: GameMode) => void;
 };
 
-const modePresentation: Record<string, { difficulty: string; Icon: typeof Layers; instructions: string; tagline: string }> = {
-  classic: { difficulty: 'Easy', Icon: Layers, tagline: 'Pure memory route', instructions: 'Match all pairs at your own pace.' },
-  'time-attack': { difficulty: 'Fast', Icon: Timer, tagline: 'Beat the clock', instructions: 'Finish before time runs out.' },
-  survival: { difficulty: 'Hard', Icon: Mountain, tagline: 'Limited moves', instructions: 'Complete the board before moves run out.' },
-  zen: { difficulty: 'Calm', Icon: Leaf, tagline: 'Calm exploration', instructions: 'No pressure, no penalties.' },
-  ai: { difficulty: 'Rival', Icon: Bot, tagline: 'Outsmart the AI', instructions: 'Take turns against memory AI.' },
-  duel: { difficulty: 'Local', Icon: Users, tagline: 'Local duel', instructions: 'Two players take turns on one device.' },
+const modePresentation: Record<string, { difficulty: string; instructions: string; tagline: string }> = {
+  classic: { difficulty: 'Easy', tagline: 'Pure memory route', instructions: 'Match all pairs at your own pace.' },
+  'time-attack': { difficulty: 'Fast', tagline: 'Beat the clock', instructions: 'Finish before time runs out.' },
+  survival: { difficulty: 'Hard', tagline: 'Limited moves', instructions: 'Complete the board before moves run out.' },
+  zen: { difficulty: 'Calm', tagline: 'Calm exploration', instructions: 'No pressure, no penalties.' },
+  ai: { difficulty: 'Rival', tagline: 'Outsmart the AI', instructions: 'Take turns against memory AI.' },
+  duel: { difficulty: 'Local', tagline: 'Local duel', instructions: 'Two players take turns on one device.' },
 };
+
+function getModeIconAssetPath(modeId: string): string {
+  return `/assets/icons/${modeId}.png`;
+}
 
 export function ModeSelect({ duelPlayers, selectedMode, selectedWorld, onSetDuelPlayers, onSelectMode, onPlay }: ModeSelectProps) {
   const { t } = useLanguage();
@@ -35,11 +38,9 @@ export function ModeSelect({ duelPlayers, selectedMode, selectedWorld, onSetDuel
         {gameModes.map((mode) => {
           const presentation = modePresentation[mode.id] ?? {
             difficulty: mode.recommendedFor,
-            Icon: Layers,
             instructions: mode.description,
             tagline: mode.name,
           };
-          const ModeIcon = presentation.Icon;
           const presentationKey = `modesScreen.presentation.${mode.id}`;
 
           return (
@@ -56,7 +57,7 @@ export function ModeSelect({ duelPlayers, selectedMode, selectedWorld, onSetDuel
               type="button"
             >
               <span className="mode-icon" aria-hidden="true">
-                <ModeIcon size={34} strokeWidth={2.5} />
+                <img alt="" draggable={false} src={getModeIconAssetPath(mode.id)} />
               </span>
               <span className="badge">{t(`${presentationKey}.difficulty`) || presentation.difficulty}</span>
               <h2>{t(`modes.${mode.id}.name`) || mode.name}</h2>
