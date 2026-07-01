@@ -19,6 +19,7 @@ const modePresentation: Record<string, { difficulty: string; instructions: strin
   zen: { difficulty: 'Calm', tagline: 'Calm exploration', instructions: 'No pressure, no penalties.' },
   ai: { difficulty: 'Rival', tagline: 'Outsmart the AI', instructions: 'Take turns against memory AI.' },
   duel: { difficulty: 'Local', tagline: 'Local duel', instructions: 'Two players take turns on one device.' },
+  questions: { difficulty: 'Local', tagline: '4-player memory quiz', instructions: 'Memorize rows, columns, and card positions.' },
 };
 
 function getModeIconAssetPath(modeId: string): string {
@@ -101,3 +102,4 @@ export function ModeSelect({ duelPlayers, selectedMode, selectedWorld, onSetDuel
     </section>
   );
 }
+

@@ -117,6 +117,7 @@ const worldUnlockLevels: Record<string, number> = {
 const achievementDefinitionsById = new Map(achievements.map((achievement) => [achievement.id, achievement]));
 const shopItemsById = new Map(shopItems.map((item) => [item.id, item]));
 const modeIds = new Set(gameModes.map((mode) => mode.id));
+const worldProgressModes = gameModes.filter((mode) => mode.id !== 'questions');
 const worldIds = new Set(worlds.map((world) => world.id));
 
 function hydratePowerUpInventory(storedProfile?: Partial<StoredProfile>): PlayerProfile['powerUpInventory'] {
@@ -845,7 +846,7 @@ export function getWorldsForLevel(level: number, worldCompletions: PlayerProfile
     unlocked: level >= (worldUnlockLevels[world.id] ?? 1),
     progress:
       level >= (worldUnlockLevels[world.id] ?? 1)
-        ? Math.round((gameModes.filter((mode) => worldCompletions[world.id]?.[mode.id]).length / gameModes.length) * 100)
+        ? Math.round((worldProgressModes.filter((mode) => worldCompletions[world.id]?.[mode.id]).length / worldProgressModes.length) * 100)
         : 0,
   }));
 }
@@ -1005,3 +1006,4 @@ function getAchievementProgressValue(profile: PlayerProfile, achievementId: stri
       return profile.unlockedAchievements.includes(achievementId) ? 1 : 0;
   }
 }
+

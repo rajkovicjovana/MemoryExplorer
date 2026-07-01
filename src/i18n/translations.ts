@@ -96,6 +96,7 @@ export const translations = {
         zen: { difficulty: 'Calm', tagline: 'Calm exploration', instructions: 'No pressure, no penalties.' },
         ai: { difficulty: 'Rival', tagline: 'Outsmart the AI', instructions: 'Take turns against memory AI.' },
         duel: { difficulty: 'Local', tagline: 'Local duel', instructions: 'Two players take turns on one device.' },
+        questions: { difficulty: 'Local', tagline: '4-player memory quiz', instructions: 'Memorize rows, columns, and card positions.' },
       },
     },
     profile: {
@@ -200,6 +201,7 @@ export const translations = {
       zen: { name: 'Zen', description: 'No timer, no pressure, just destination discovery.', reward: 'Practice only', recommendedFor: 'Relaxed sessions' },
       ai: { name: 'Player vs AI', description: 'Take turns against a rival explorer with adaptive memory.', reward: 'Rival rewards', recommendedFor: 'Competitive play' },
       duel: { name: '2 Player Duel', description: 'Pass-and-play turns where each player races to claim the most pairs.', reward: 'Local bragging rights', recommendedFor: 'Local multiplayer' },
+      questions: { name: 'Questions Mode', description: 'Memorize the 4x4 board, then answer unique questions about rows, columns, and card positions.', reward: 'Local quiz score', recommendedFor: '4 players' },
     },
     shopItems: {
       compass: { name: 'Compass', description: 'Peek one unmatched pair for 2 seconds.' },
@@ -301,6 +303,7 @@ export const translations = {
         zen: { difficulty: 'Mirno', tagline: 'Mirna igra', instructions: 'Bez pritiska i kazni.' },
         ai: { difficulty: 'Rival', tagline: 'Rival', instructions: 'Nadmudri protivnika.' },
         duel: { difficulty: 'Lokalno', tagline: 'Lokalno', instructions: 'Igrajte naizmjenično.' },
+        questions: { difficulty: 'Lokalno', tagline: 'Kviz za 4 igrača', instructions: 'Zapamti redove, kolone i pozicije kartica.' },
       },
     },
     profile: {
@@ -372,6 +375,7 @@ export const translations = {
       zen: { name: 'Zen', description: 'Bez pritiska i kazni.', reward: 'Samo vjezba', recommendedFor: 'Opustene sesije' },
       ai: { name: 'Protiv AI', description: 'Nadmudri protivnika.', reward: 'Rivalske nagrade', recommendedFor: 'Takmičarska igra' },
       duel: { name: 'Duel za dvoje', description: 'Igrajte naizmjenično.', reward: 'Lokalna prava hvalisanja', recommendedFor: 'Lokalni multiplayer' },
+      questions: { name: 'Pitanja', description: 'Zapamti tablu 4x4, a zatim odgovori na različita pitanja o redovima, kolonama i pozicijama kartica.', reward: 'Lokalni kviz poeni', recommendedFor: '4 igrača' },
     },
     shopItems: {
       compass: { name: 'Kompas', description: 'Otkrij jedan nepareni par na 2 sekunde.' },
@@ -440,3 +444,4 @@ export const translations = {
 
 export type Language = keyof typeof translations;
 export type TranslationKey = string;
+

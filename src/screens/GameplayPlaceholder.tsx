@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Achievement, GameMode, PlayerProfile, PowerUpId, ScreenId, World } from '../types/game';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { QuestionsModeSession } from './QuestionsModeSession';
 import { useLanguage } from '../i18n/useLanguage';
 import type {
   AchievementProgress,
@@ -385,6 +386,18 @@ export function GameplayPlaceholder({
   onWorldModeComplete,
 }: GameplayPlaceholderProps) {
   const [restartKey, setRestartKey] = useState(0);
+
+  if (mode.id === 'questions') {
+    return (
+      <QuestionsModeSession
+        key={`${world.id}-${mode.id}-${restartKey}`}
+        onNavigate={onNavigate}
+        onRegisterExitHandler={onRegisterExitHandler}
+        onRestart={() => setRestartKey((currentKey) => currentKey + 1)}
+        world={world}
+      />
+    );
+  }
 
   return (
     <GameplaySession
@@ -2085,3 +2098,4 @@ function GameplaySession({
     </section>
   );
 }
+
